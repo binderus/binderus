@@ -1,3 +1,7 @@
+To download the latest version, please visit: https://binderus.com
+
+---
+
 09/28/2022 - 0.1.6
 - Added Internal / External hyperlink handling (to link to local files or websites)
 - Added Setting to change user's Data Directory (only under ~/Documents/ for now), useful for syncing with Dropbox, OneDrive, GDrive, etc.
