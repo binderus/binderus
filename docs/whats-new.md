@@ -1,6 +1,6 @@
 09/28/2022 - 0.1.6
 - Added Internal / External hyperlink handling (to link to local files or websites)
-- Added Setting to change user's Data Directory (only under ~/Documents/ for now)
+- Added Setting to change user's Data Directory (only under ~/Documents/ for now), useful for syncing with Dropbox, OneDrive, GDrive, etc.
 - Sort files: show favorited files on top
 
 09/24/2022 - 0.1.3
