@@ -1,4 +1,4 @@
-# Hi there 👋
+# Hi there 👋 Welcome to Binderus!
 
 ### What's New?
 
