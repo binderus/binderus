@@ -1,6 +1,7 @@
-09/28/2022 - 0.1.5
+09/28/2022 - 0.1.6
 - Added Internal / External hyperlink handling (to link to local files or websites)
 - Added Setting to change user's Data Directory (only under ~/Documents/ for now)
+- Sort files: show favorited files on top
 
 09/24/2022 - 0.1.3
 - Added Search Tab: search files by file name
