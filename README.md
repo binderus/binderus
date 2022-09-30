@@ -1,6 +1,6 @@
 # Hi there 👋 Welcome to Binderus!
 
-A simple yet powerful note-taking app that you have been looking for. 
+A note-taking app that focus on Zen and Simplicity.
 
 ### What's New?
 
