@@ -1,5 +1,5 @@
 - To download the latest version, please visit: https://binderus.com
-- For FAQ, Docs, please visit: [User Guide](https://www.binderus.com/#/how-to)
+- For FAQ, Docs, please visit: https://www.binderus.com/#/how-to
 
 ---
 
