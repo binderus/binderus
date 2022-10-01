@@ -1,6 +1,6 @@
 # Hi there 👋 Welcome to Binderus!
 
-A note-taking app that focus on Zen and Simplicity.
+A note-taking app that focus on Zen and Simplicity. Visit [Binderus.com](https://www.binderus.com)
 
 ### What's New?
 
