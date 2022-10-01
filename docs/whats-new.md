@@ -1,8 +1,3 @@
-- To download the latest version, please visit: https://binderus.com
-- For FAQ, Docs, please visit: https://www.binderus.com/#/how-to
-
----
-
 09/30/2022 - 0.1.9
 - Added Linux (Debian/Ubuntu) build
 
