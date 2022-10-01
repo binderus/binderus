@@ -18,7 +18,7 @@ Please visit [Issues](https://github.com/binderus/binderus/issues)
 
 Here are some highlights of Binderus:
 
-- Simplicity, lightweight and fast! ⚡
+- Simplicity, lightweight (~ 3 MB) and fast! ⚡
 - Advanced visual editor (WYSIWYG - What You See Is What You Get) 👁
 - Support Plain text and Markdown with internal / external links 🔗
 - You own your data and they are always portable, no lock-in 📦
