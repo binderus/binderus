@@ -1,6 +1,10 @@
-To download the latest version, please visit: https://binderus.com
+- To download the latest version, please visit: https://binderus.com
+- For FAQ, Docs, please visit: [User Guide](https://www.binderus.com/#/how-to)
 
 ---
+
+09/30/2022 - 0.1.9
+- Added Linux (Debian/Ubuntu) build
 
 09/29/2022 - 0.1.8
 - Added Internal / External hyperlink handling (to link to local files or websites)
