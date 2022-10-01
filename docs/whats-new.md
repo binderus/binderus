@@ -1,7 +1,8 @@
-09/30/2022 - 0.1.9
+09/30/2022 - 0.2.0
 - Added Linux (Debian/Ubuntu) build
+- Added Language support for Chinese and Japanese (others coming soon)
 
-09/29/2022 - 0.1.8
+09/28/2022 - 0.1.8
 - Added Internal / External hyperlink handling (to link to local files or websites)
 - Added Setting to change user's Data Directory (only under ~/Documents/ for now), useful for syncing with Dropbox, OneDrive, GDrive, etc.
 - Sort files: show favorited files on top
