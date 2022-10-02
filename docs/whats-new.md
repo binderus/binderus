@@ -1,3 +1,7 @@
+10/02/2022 - 0.2.1
+- Added Setting: Language dropdown. It also auto detects user's locale language.
+- Added Spanish (Spain) es-ES. Thanks @javiergarber
+
 09/30/2022 - 0.2.0
 - Added Linux (Debian/Ubuntu) build
 - Added Language support for Chinese and Japanese (others coming soon)
