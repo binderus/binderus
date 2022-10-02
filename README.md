@@ -10,9 +10,10 @@ A note-taking app that focus on Zen and Simplicity. Visit [Binderus.com](https:/
 
 [Visit Binderus.com](https://www.binderus.com)
 
-### Questions? Comments?
+### Bugs? Questions? Comments?
 
-Please visit [Issues](https://github.com/binderus/binderus/issues)
+- Bug Report: please visit [Github-Issues](https://github.com/binderus/binderus/issues)
+- Questions or comments: please visit [Discord](https://discord.gg/hqx7DSq8J6)
 
 ### Features
 
