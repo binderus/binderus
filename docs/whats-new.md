@@ -1,7 +1,9 @@
-10/02/2022 - 0.2.1
-- Added Setting: Language dropdown. It also auto detects user's locale language.
-- Added Spanish (Spain) es-ES. Thanks @javiergarber
-- Added Animation effect for the file list
+10/04/2022 - 0.2.3
+- App: added Spanish (Spain) es-ES. Thanks @javiergarber
+- App: added Animation effect for the file list
+- Setting: Language dropdown. It also auto detects user's locale language
+- File threedot menu: added "More" (threedot) menu dropdown
+- File threedot menu: added "Reveal file location" (in Explorer or Finder)
 
 09/30/2022 - 0.2.0
 - Added Linux (Debian/Ubuntu) build
