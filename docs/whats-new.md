@@ -1,7 +1,8 @@
-10/05/2022 - 0.2.4
-- App: Global App Shortcuts; Ctrl < and Ctrl > to switch Tabs;
-- App: Button to show/hide sidebar: shortcut: Ctrl \
+10/05/2022 - 0.2.5
+- App: Global App Shortcuts; Cmd < and Cmd > to switch Tabs;
+- App: Button to show/hide sidebar: shortcut: Cmd \
 - App: Spanish (Spain) es-ES. Thanks @javiergarber
+- App: New app icons. Thanks @circa-0
 - App: Animation effect for the file list
 - Setting: Language dropdown. It also auto detects user's locale language
 - Setting: Button to reveal data directory location in Explorer or Finder
