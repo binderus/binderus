@@ -1,3 +1,9 @@
+10/06/2022 - 0.2.6
+- App: Support videos (mp4, webm), audio (mp3, ogg)
+- App: Support image files (bmp, png, apng, jpg, jpeg, gif, ico, svg)
+- Editor: Highlight code syntax
+- Setting: Editor: Font dropdown
+
 10/05/2022 - 0.2.5
 - App: Global App Shortcuts; Cmd < and Cmd > to switch Tabs;
 - App: Button to show/hide sidebar: shortcut: Cmd \
