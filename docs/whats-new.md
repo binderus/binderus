@@ -1,11 +1,17 @@
-10/02/2022 - 0.2.1
-- Added Setting: Language dropdown. It also auto detects user's locale language.
-- Added Spanish (Spain) es-ES. Thanks @javiergarber
-- Added Animation effect for the file list
+10/05/2022 - 0.2.5
+- App: Global App Shortcuts; Cmd < and Cmd > to switch Tabs;
+- App: Button to show/hide sidebar: shortcut: Cmd \
+- App: Spanish (Spain) es-ES. Thanks @javiergarber
+- App: New app icons. Thanks @circa-0
+- App: Animation effect for the file list
+- Setting: Language dropdown. It also auto detects user's locale language
+- Setting: Button to reveal data directory location in Explorer or Finder
+- File threedot menu: "More" (threedot) menu dropdown
+- File threedot menu: "Reveal file location" (in Explorer or Finder)
 
 09/30/2022 - 0.2.0
-- Added Linux (Debian/Ubuntu) build
-- Added Language support for Chinese and Japanese (others coming soon)
+- Linux (Debian/Ubuntu) build
+- Language support for Chinese and Japanese (others coming soon)
 
 09/28/2022 - 0.1.8
 - Added Internal / External hyperlink handling (to link to local files or websites)
