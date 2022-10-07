@@ -1,4 +1,5 @@
 10/06/2022 - 0.2.6
+- Fix: image hyperlink was broken in previous versions
 - App: Support videos (mp4, webm), audio (mp3, ogg)
 - App: Support image files (bmp, png, apng, jpg, jpeg, gif, ico, svg)
 - Editor: Highlight code syntax
