@@ -1,5 +1,7 @@
-10/06/2022 - 0.2.6
+10/11/2022 - 0.2.8
 - Fix: image hyperlink was broken in previous versions
+- App: Search files by content, users can also type "#tags" in the files for searching
+- App: Base folder icon, other icons
 - App: Support videos (mp4, webm), audio (mp3, ogg)
 - App: Support image files (bmp, png, apng, jpg, jpeg, gif, ico, svg)
 - Editor: Highlight code syntax
