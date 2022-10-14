@@ -1,5 +1,6 @@
-10/12/2022 - 0.2.9
+10/14/2022 - 0.3.0
 - Fix: image hyperlink was broken in the previous versions
+- Setting: Editor: add Custom background color, text color
 - Setting: add Shortcuts tab
 - Search: use arrow keys to navigate through search results, enter to select one
 - App: Support code file editing (html, js, ts, css, java, c, python, rust, scripts, golang, php, sql, json, yaml)
