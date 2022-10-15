@@ -1,3 +1,7 @@
+10/15/2022 - 0.3.2
+- App: favourite file list: add search box; use arrow key to navigate search results
+- App: file list: sort by alphabet order
+
 10/14/2022 - 0.3.0
 - Fix: image hyperlink was broken in the previous versions
 - Setting: Editor: add Custom background color, text color
