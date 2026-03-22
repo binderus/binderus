@@ -1,3 +1,11 @@
+0.4.5
+- App: secure database storage option
+- App: revamped user interface and UX for a cleaner look and feel
+- Editor: added Multi-tab support
+- Editor: added Cmd+F (or Ctrl+F) to search for text
+- Editor: Setting: added Enter key behavior options
+- Editor: added Cmd+; (or Ctrl+;) to open side panel (experimental): to show raw markdown content for now
+
 0.3.2
 - App: favourite file list: add search box; use arrow key to navigate search results
 - App: file list: sort by alphabet order
