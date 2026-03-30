@@ -1,0 +1,179 @@
+/* src/themes/_variables.css
+ * Description: Semantic CSS variable contract for the Binderus theme system.
+ *   Defines ~45 tokens with dark-nord fallback values. Always statically imported.
+ *   Registers variables with Tailwind v4 @theme for utility class generation.
+ */
+
+:root {
+  /* User custom color overrides (set via Settings > Editor) */
+  --editor-color: inherit;
+  --editor-bg-color: var(--bg-primary);
+
+  /* Base */
+  --bg-primary: #2e3440;
+  --bg-secondary: #3b4252;
+  --bg-tertiary: #111827;
+  --fg-primary: #d8dee9;
+  --fg-secondary: #9ca3af;
+  --fg-muted: #6b7280;
+
+  /* Accent (HSL for customization) */
+  --accent-h: 193;
+  --accent-s: 43%;
+  --accent-l: 67%;
+  --accent: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
+  --accent-hover: #81a1c1;
+  --accent-fg: #ffffff;
+
+  /* Borders */
+  --border-primary: #4c566a;
+  --border-secondary: #1f2937;
+  --border-focus: var(--accent);
+
+  /* Sidebar */
+  --sidebar-bg: #111827;
+  --sidebar-fg: #9ca3af;
+  --sidebar-fg-hover: #e5e7eb;
+  --sidebar-item-hover: rgba(255, 255, 255, 0.06);
+  --sidebar-item-active: rgba(255, 255, 255, 0.08);
+  --sidebar-folder: #81a1c1;
+
+  /* Tab Bar */
+  --tab-bg: #111827;
+  --tab-fg: #9ca3af;
+  --tab-active-bg: #2e3440;
+  --tab-active-fg: #d8dee9;
+  --tab-active-border: var(--accent);
+  --tab-dirty: #ebcb8b;
+
+  /* Editor */
+  --editor-bg: #2e3440;
+  --editor-fg: #ccc;
+  --editor-link: #88c0d0;
+  --editor-wikilink: #a78bfa;
+  --editor-code-bg: #222222;
+  --editor-selection: rgba(136, 192, 208, 0.2);
+
+  /* Dialog / Modal */
+  --dialog-bg: #3b4252;
+  --dialog-fg: #d8dee9;
+  --dialog-title: #eceff4;
+  --dialog-label: #7b8ea8;
+  --dialog-input-bg: #2e3440;
+  --dialog-input-border: #4c566a;
+  --dialog-input-focus: var(--accent);
+  --dialog-body: #d8dee9;
+  --dialog-tab-fg: #8892a5;
+  --dialog-tab-hover: #d8dee9;
+  --dialog-tab-active: var(--accent);
+  --dialog-btn-bg: #5e81ac;
+  --dialog-btn-hover: #81a1c1;
+  --dialog-btn-fg: #eceff4;
+  --dialog-version: var(--accent);
+  --dialog-link: var(--accent);
+  --dialog-link-hover: #8fbcbb;
+  --dialog-error: #bf616a;
+  --dialog-divider: #4c566a;
+  --dialog-kbd-bg: #2e3440;
+  --dialog-kbd-border: #4c566a;
+  --dialog-kbd-fg: #d8dee9;
+  --dialog-radio-strong: #d8dee9;
+  --dialog-radio-span: #adb8c9;
+  --dialog-radio-accent: var(--accent);
+
+  /* Find Bar */
+  --find-bar-bg: #3b4252;
+  --find-bar-border: #4c566a;
+  --find-bar-input-bg: #2e3440;
+  --find-bar-input-border: #4c566a;
+  --find-bar-input-fg: #d8dee9;
+  --find-bar-shadow: rgba(0, 0, 0, 0.3);
+
+  /* Popover & Menu */
+  --popover-bg: #1f2937;
+  --popover-border: #4b5563;
+  --menu-item-fg: #d1d5db;
+  --menu-item-hover-bg: #374151;
+  --menu-item-hover-fg: #fff;
+
+  /* Misc */
+  --icon-fg: #9ca3af;
+  --icon-fg-hover: #fff;
+  --scrollbar-thumb: #374151;
+  --backdrop: rgba(0, 0, 0, 0.3);
+  --resize-handle-hover: rgba(136, 192, 208, 0.4);
+
+  /* Semantic Status */
+  --color-error: #bf616a;
+  --color-warning: #ebcb8b;
+  --color-success: #a3be8c;
+  --color-info: #88c0d0;
+
+  /* Code fence dropdown (milkdown) */
+  --code-fence-selector-bg: #3b4252;
+  --code-fence-selector-fg: #d8dee9;
+  --code-fence-selector-border: #4c566a;
+  --code-fence-selector-hover: #4c566a;
+
+  /* Table (milkdown) */
+  --table-border: #4c566a;
+  --table-header-bg: #3b4252;
+  --table-header-fg: #d8dee9;
+
+  /* Mermaid diagram */
+  --mermaid-rect-fill: #3b4252;
+  --mermaid-rect-stroke: #88c0d0;
+  --mermaid-text: #d8dee9;
+  --mermaid-edge: #81a1c1;
+
+  /* Find highlight colors */
+  --find-highlight-bg: rgba(136, 192, 208, 0.3);
+  --find-highlight-active-bg: rgba(136, 192, 208, 0.7);
+
+  /* Button base styles (light fallback for non-dialog buttons) */
+  --btn-primary-bg: #2563eb;
+  --btn-primary-hover: #3b82f6;
+  --btn-modal-bg: #dbeafe;
+  --btn-modal-hover: #bfdbfe;
+  --btn-modal-fg: #000;
+  --btn-danger-fg: #f87171;
+  --btn-danger-hover-bg: #374151;
+
+  /* Input dark */
+  --input-dark-bg: #111827;
+  --input-dark-border: #4b5563;
+  --input-dark-fg: #fff;
+  --input-dark-placeholder: #6b7280;
+  --input-dark-focus: #3b82f6;
+
+  /* Prism code syntax (shared, dark-nord based) */
+  --prism-bg: #2e3440;
+  --prism-fg: #d8dee9;
+}
+
+@theme {
+  --color-bg-primary: var(--bg-primary);
+  --color-bg-secondary: var(--bg-secondary);
+  --color-bg-tertiary: var(--bg-tertiary);
+  --color-fg-primary: var(--fg-primary);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-border-primary: var(--border-primary);
+  --color-border-secondary: var(--border-secondary);
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-sidebar-fg: var(--sidebar-fg);
+  --color-tab-bg: var(--tab-bg);
+  --color-tab-fg: var(--tab-fg);
+  --color-editor-bg: var(--editor-bg);
+  --color-editor-fg: var(--editor-fg);
+  --color-dialog-bg: var(--dialog-bg);
+  --color-dialog-fg: var(--dialog-fg);
+  --color-dialog-btn-bg: var(--dialog-btn-bg);
+  --color-error: var(--color-error);
+  --color-warning: var(--color-warning);
+  --color-success: var(--color-success);
+  --color-info: var(--color-info);
+}
