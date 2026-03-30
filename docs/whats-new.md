@@ -1,4 +1,7 @@
-## 0.4.9
+## 0.5.2
+- App: multi-vault model: user can have multiple 'base directory' (vault) now
+- App: use Tree View
+- App: add ability to move single/multiple files and directories
 - App: add Export modal with DOCX, HTML export; DB export to directory;
 - App: add Quick Switcher
 - App: many optimization for performance
