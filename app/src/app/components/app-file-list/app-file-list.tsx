@@ -163,6 +163,8 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
         await invoke('delete_file', { filePath: item.file_path });
       }
     }
+    // Remove deleted item from favourites (if present)
+    setFavourites((list) => list.filter((fav) => fav.file_path !== item.file_path));
     readDir();
     setDeletingItem(item);
   };
@@ -198,6 +200,14 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
     if (!isWeb) {
       await moveFiles(moveItems.map((i) => i.file_path), destPath);
     }
+    // Update favourites: replace old paths with new paths for moved items
+    setFavourites((list) => list.map((fav) => {
+      const moved = moveItems.find((i) => i.file_path === fav.file_path);
+      if (!moved) return fav;
+      const sep = fav.file_path.includes('\\') ? '\\' : '/';
+      const newPath = destPath + sep + fav.file_name;
+      return { ...fav, file_path: newPath };
+    }));
     setMoveItems([]);
     setSelectedItems([]);
     readDir();
@@ -382,7 +392,7 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
                             <>
                               <Popover.Button
                                 as="button"
-                                className="ml-1 icon-btn flex items-center"
+                                className="ml-1 mr-2 icon-btn flex items-center"
                                 onClick={(e: React.MouseEvent) => {
                                   e.stopPropagation();
                                   setConfirmDeleteId('');
@@ -594,7 +604,7 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
                         <>
                           <Popover.Button
                             as="button"
-                            className="ml-1 icon-btn flex items-center"
+                            className="ml-1 mr-2 icon-btn flex items-center"
                             onClick={(e: React.MouseEvent) => {
                               e.stopPropagation();
                               setConfirmDeleteId('');

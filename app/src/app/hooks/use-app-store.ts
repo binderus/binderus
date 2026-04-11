@@ -3,7 +3,7 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 import { EditorTab, FileType, Theme, themeValues } from '../types';
 import { fontNames, fontNameToClassName, isWeb } from '../utils/base-utils';
 import { DEFAULT_THEME } from '../utils/constants';
-import { readVaultSettings, writeVaultSettings, readGlobalSettings, writeGlobalSettings } from '../utils/tauri-utils';
+import { readVaultSettings, readVaultSettingsLatest, writeVaultSettings, readGlobalSettings, writeGlobalSettings } from '../utils/tauri-utils';
 import { loadTheme } from '../utils/theme-registry';
 
 type Updater<T> = T | ((prev: T) => T);
@@ -105,7 +105,7 @@ export const useAppStore = create<AppState>()(
         autoLockTimeout: 15,
         autoLockOnMinimize: false,
         enterMode: 'paragraph',
-        sidebarView: 'flat',
+        sidebarView: 'tree',
         isLocked: false,
 
         // Actions — file navigation
@@ -265,7 +265,8 @@ export const useAppStore = create<AppState>()(
             content: null,
             isDirty: false
           })),
-          activeTabPath: state.activeTabPath
+          activeTabPath: state.activeTabPath,
+          sidebarView: state.sidebarView
         })
       }
     )
@@ -274,12 +275,14 @@ export const useAppStore = create<AppState>()(
 
 // --- Side-effect subscriptions (run outside React) ---
 
-// Persist favourites + recentList
+// Persist favourites + recentList.
+// Uses readVaultSettingsLatest() to read the pending debounce buffer (if any) instead of
+// disk, preventing read-modify-write races when multiple callers write vault settings.
 useAppStore.subscribe(
   (s) => ({ favourites: s.favourites, recentList: s.recentList }),
   async ({ favourites, recentList }) => {
     if (isWeb || favourites.length === 0) return;
-    const json: any = await readVaultSettings();
+    const json: any = await readVaultSettingsLatest();
     const pick = (obj: FileType) => ({
       file_path: obj.file_path,
       file_name: obj.file_name,

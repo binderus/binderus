@@ -9,6 +9,7 @@
 import { $inputRule, $prose } from '@milkdown/utils';
 import { InputRule } from '@milkdown/prose/inputrules';
 import { Plugin, PluginKey } from '@milkdown/prose/state';
+import { open } from '@tauri-apps/plugin-shell';
 
 export const WIKILINK_PREFIX = 'wikilink://';
 const WIKILINK_PATTERN = /\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/;
@@ -32,6 +33,13 @@ export const postprocessUnicode = (md: string): string => {
   md = md.replace(/\{\{u2714\}\}/g, '✔');
   return md;
 };
+
+/** Unescape underscores in markdown link text and URLs: [some\_text](some\_url) → [some_text](some_url).
+ *  remark-stringify over-eagerly escapes _ inside links; CommonMark doesn't require it in destinations,
+ *  and in a WYSIWYG editor the user never types raw escapes so they shouldn't appear in link text either. */
+export const unescapeLinkUrls = (md: string): string =>
+  md.replace(/\[([^\]]*)\]\(([^)]*)\)/g, (_m, text, url) =>
+    `[${(text as string).replace(/\\_/g, '_')}](${(url as string).replace(/\\_/g, '_')})`);
 
 /** On load: convert [[target]] / [[target|alias]] to markdown links so Milkdown renders them as clickable. */
 export const preprocessWikilinks = (content: string): string =>
@@ -83,14 +91,30 @@ export const linkClickHandler = $prose(() =>
         const target = event.target as HTMLElement;
         const anchor = target.closest('a');
         if (!anchor) return false;
-        const href = anchor.getAttribute('href') ?? '';
-        if (!href) return false;
+        // Fall back to anchor text if href is empty but text looks like a URL
+        let href = anchor.getAttribute('href') ?? '';
+        if (!href) {
+          const text = (anchor.textContent ?? '').trim();
+          if (/^https?:\/\//.test(text) || /^[a-z0-9-]+(\.[a-z]{2,}){1,}(\/|$)/i.test(text)) {
+            href = text.startsWith('http') ? text : `https://${text}`;
+          } else {
+            return false;
+          }
+        }
 
         event.preventDefault();
         event.stopPropagation();
-        anchor.dispatchEvent(
-          new CustomEvent('link-navigate', { bubbles: true, detail: { href } })
-        );
+
+        // Open external links directly (no dependency on enhanceEditor timing)
+        const isExternal = href.startsWith('http') && !href.includes('localhost');
+        if (isExternal) {
+          open(href);
+        } else {
+          // Internal/wikilinks: dispatch event for app-level handler
+          anchor.dispatchEvent(
+            new CustomEvent('link-navigate', { bubbles: true, detail: { href } })
+          );
+        }
         return true;
       }
     }

@@ -18,7 +18,7 @@ import { AiOutlineQuestionCircle } from 'react-icons/ai';
 const SettingModal = lazy(() => import('../modal/setting-modal'));
 import QuickSwitcherModal from '../quick-switcher/quick-switcher-modal';
 import type { AppCommand } from '../quick-switcher/quick-switcher-modal';
-import { BsGear as BsGearCmd, BsLock, BsXCircle, BsBoxArrowUpRight, BsLayoutSidebarReverse } from 'react-icons/bs';
+import { BsGear as BsGearCmd, BsLock, BsXCircle, BsBoxArrowUpRight, BsLayoutSidebarReverse, BsFolderSymlink, BsPrinter, BsStarFill } from 'react-icons/bs';
 import { toast as reactToast } from 'react-toastify';
 import { Tooltip } from '../tooltip/tooltip';
 import { BINDERUS_WEB_URL } from '../../utils/constants';
@@ -30,9 +30,11 @@ import {
   focusEditor,
   isWeb,
   sanitizeInternalLink,
+  setFavouriteItem,
   splitFilePath,
   t
 } from '../../utils/base-utils';
+import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getPath } from '../../utils/tauri-utils';
 import { BsArrowBarRight, BsGear } from 'react-icons/bs';
 import { useAppStore } from '../../hooks/use-app-store';
@@ -150,6 +152,7 @@ export default ({}: PageProps) => {
 
   // Tauri menu events (macOS native menu items that bypass the WebView keydown)
   useEffect(() => {
+    if (isWeb) return;
     const unlistenSettings = listen('open-settings', () => setSettingModalOpened(true));
     const unlistenCloseTab = listen('close-tab', () => {
       const { activeTabPath: path, closeTab: close } = useAppStore.getState();
@@ -364,6 +367,26 @@ export default ({}: PageProps) => {
       id: 'lock', label: t('APP_LOCK') || 'Lock App', icon: <BsLock size={14} />,
       shortcut: getShortcutDisplay('lock'), onSelect: async () => { await lockDb(); setIsLocked(true); }
     }] : []),
+    { id: 'show-file-location', label: t('APP_SHOW_FILE_LOCATION') || 'Show File Location', icon: <BsFolderSymlink size={14} />,
+      onSelect: async () => {
+        const { activeTabPath: path, storageBackend } = useAppStore.getState();
+        if (!path || isWeb) return;
+        if (storageBackend !== 'filesystem') { reactToast.info(t('APP_SHOW_FILE_LOCATION_DB')); return; }
+        await revealItemInDir(path);
+      } },
+    { id: 'export-print', label: t('APP_EXPORT_PRINT') || 'Export and Print', icon: <BsPrinter size={14} />,
+      onSelect: () => window.dispatchEvent(new CustomEvent('open-export-modal')) },
+    { id: 'toggle-favorite', label: t('APP_TOGGLE_FAVORITE') || 'Toggle Favorite', icon: <BsStarFill size={14} />,
+      onSelect: () => {
+        const { activeTabPath: path, tabs: allTabs } = useAppStore.getState();
+        const tab = allTabs.find((t) => t.file_path === path);
+        if (!tab) return;
+        const file: FileType = { file_path: tab.file_path, file_name: tab.file_name, file_text: '', is_file: true, is_dir: false };
+        const isFav = useAppStore.getState().isFavourite(file);
+        useAppStore.getState().setFavourites((list) => setFavouriteItem(list, file, !isFav));
+      } },
+    { id: 'close-other-tabs', label: t('TAB_CLOSE_OTHERS') || 'Close Others', icon: <BsXCircle size={14} />,
+      onSelect: () => { const { tabs: allTabs, activeTabPath: atp, closeTab: ct } = useAppStore.getState(); allTabs.filter((tab) => tab.file_path !== atp).forEach((tab) => ct(tab.file_path)); } },
     { id: 'close-all-tabs', label: t('APP_CLOSE_ALL_TABS') || 'Close All Tabs', icon: <BsXCircle size={14} />,
       onSelect: () => { const { tabs: allTabs, closeTab: ct } = useAppStore.getState(); allTabs.forEach((tab) => ct(tab.file_path)); } },
     { id: 'whats-new', label: t('APP_MAIN_WHATS_NEW') || "What's New", icon: <BsBoxArrowUpRight size={14} />,

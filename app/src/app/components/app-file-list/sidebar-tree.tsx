@@ -203,7 +203,7 @@ function TreeNodeItem({
               <>
                 <Popover.Button
                   as="button"
-                  className="ml-1 icon-btn flex items-center flex-shrink-0"
+                  className="ml-1 mr-2 icon-btn flex items-center flex-shrink-0"
                   onClick={(e: React.MouseEvent) => { e.stopPropagation(); }}
                 >
                   <FiMoreVertical size={14} />
@@ -467,6 +467,8 @@ export default function SidebarTree({ rootPath, onFileSelect, onNewFile, onNewFo
       if (item.is_dir) await deleteDir(item.file_path);
       else await invoke('delete_file', { filePath: item.file_path });
     }
+    // Remove deleted item from favourites (if present)
+    setFavourites((list) => list.filter((fav) => fav.file_path !== item.file_path));
     setDeletingItem(item);
     setConfirmDeleteId('');
     const fresh = await loadChildren(rootPath);
@@ -483,6 +485,14 @@ export default function SidebarTree({ rootPath, onFileSelect, onNewFile, onNewFo
   const handleMoveConfirm = async (destPath: string) => {
     if (moveItems.length === 0) return;
     if (!isWeb) await moveFiles(moveItems.map((i) => i.file_path), destPath);
+    // Update favourites: replace old paths with new paths for moved items
+    setFavourites((list) => list.map((fav) => {
+      const moved = moveItems.find((i) => i.file_path === fav.file_path);
+      if (!moved) return fav;
+      const sep = fav.file_path.includes('\\') ? '\\' : '/';
+      const newPath = destPath + sep + fav.file_name;
+      return { ...fav, file_path: newPath };
+    }));
     setMoveItems([]);
     setSelectedItems([]);
     const fresh = await loadChildren(rootPath);

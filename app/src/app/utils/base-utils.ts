@@ -184,7 +184,7 @@ export const enhanceEditor = ({ file, folder, internalLinkClicked }: EnhanceEdit
         const href = (ev.detail?.href ?? '').trim();
         if (isExternalLink(href)) {
           open(href);
-        } else {
+        } else if (href) {
           internalLinkClicked(ev.target as HTMLAnchorElement);
         }
       }) as EventListener;
@@ -378,16 +378,29 @@ export const updateCssVar = (cssVarName: string, value: string) => {
   (cssRoot as HTMLElement)?.style?.setProperty(`--${cssVarName}`, value);
 };
 
-/** Lightweight debounce — drop-in replacement for lodash/debounce (trailing-edge only). */
+/** Lightweight debounce — drop-in replacement for lodash/debounce (trailing-edge only).
+ *  .cancel() discards pending call; .flush() fires it immediately and returns its result. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const debounce = <T extends (...args: any[]) => any>(fn: T, ms: number): T & { cancel: () => void } => {
+export const debounce = <T extends (...args: any[]) => any>(fn: T, ms: number): T & { cancel: () => void; flush: () => ReturnType<T> | undefined } => {
   let id: ReturnType<typeof setTimeout> | null = null;
+  let lastArgs: Parameters<T> | null = null;
   const debounced = (...args: Parameters<T>) => {
+    lastArgs = args;
     if (id) clearTimeout(id);
-    id = setTimeout(() => fn(...args), ms);
+    id = setTimeout(() => { lastArgs = null; fn(...args); }, ms);
   };
-  debounced.cancel = () => { if (id) { clearTimeout(id); id = null; } };
-  return debounced as T & { cancel: () => void };
+  debounced.cancel = () => { if (id) { clearTimeout(id); id = null; lastArgs = null; } };
+  debounced.flush = () => {
+    if (id && lastArgs) {
+      clearTimeout(id);
+      id = null;
+      const args = lastArgs;
+      lastArgs = null;
+      return fn(...args);
+    }
+    return undefined;
+  };
+  return debounced as T & { cancel: () => void; flush: () => ReturnType<T> | undefined };
 };
 
 export const updateCustomStylesClassname = (editorColor: string, editorBgColor: string) => {

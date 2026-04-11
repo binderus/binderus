@@ -145,6 +145,43 @@ export const writeVaultSettings = (settingJson: any): Promise<void> => {
   });
 };
 
+/** Read vault settings, preferring the pending (not yet flushed) write if available.
+ *  This avoids read-modify-write races where a debounced write hasn't landed on disk yet. */
+export const readVaultSettingsLatest = async (): Promise<any> => {
+  if (_pendingVaultJson) return structuredClone(_pendingVaultJson);
+  return readVaultSettings();
+};
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown helpers
+// ---------------------------------------------------------------------------
+
+/** Registry for editor debounce flush — set by app-editor-panel on mount. */
+let _editorFlushFn: (() => Promise<void> | undefined) | null = null;
+export const registerEditorFlush = (fn: () => Promise<void> | undefined) => { _editorFlushFn = fn; };
+export const unregisterEditorFlush = () => { _editorFlushFn = null; };
+
+/** Flush all pending debounced writes (editor + settings) before quit. */
+export const flushAllPendingWrites = async (): Promise<void> => {
+  const promises: Promise<void>[] = [];
+  // Flush editor debounce
+  const editorResult = _editorFlushFn?.();
+  if (editorResult) promises.push(editorResult);
+  // Flush global settings debounce
+  if (_globalWriteTimer) {
+    clearTimeout(_globalWriteTimer);
+    _globalWriteTimer = null;
+  }
+  if (_pendingGlobalJson) promises.push(_flushGlobalWrite());
+  // Flush vault settings debounce
+  if (_vaultWriteTimer) {
+    clearTimeout(_vaultWriteTimer);
+    _vaultWriteTimer = null;
+  }
+  if (_pendingVaultJson) promises.push(_flushVaultWrite());
+  if (promises.length) await Promise.all(promises);
+};
+
 
 /** Create example note if vault is empty. */
 export const createExampleNote = async () => {

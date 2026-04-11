@@ -1,12 +1,16 @@
 /**
- * Description: Checks for app updates by fetching the latest version from binderus.com.
- *   Called on-demand (e.g. when the What's New modal opens) — not automatically on startup.
+ * Description: Checks for app updates by fetching the latest version from binderus.com/api/version.
+ *   - checkLatestVersion(): on-demand check (e.g. What's New modal), returns update info
+ *   - scheduleStartupVersionPing(): silent fire-and-forget call 10s after launch for analytics
+ *   Both use the same /api/version endpoint with plain-text sanitized params for transparency.
  * Requirements: Network access
  * Inputs: None
  * Outputs: { latestVersion, updateUrl } — non-null when an update is available
  */
 import { VERSION, BINDERUS_WEB_URL } from '../utils/constants';
 import { httpFetch } from '../utils/api-utils';
+import { isWeb } from '../utils/base-utils';
+import { type as osType, version as osVersion } from '@tauri-apps/plugin-os';
 
 export interface VersionCheckResult {
   latestVersion: string | null;
@@ -18,16 +22,33 @@ interface VersionResponse {
   url?: string;
 }
 
-function navInfo(): string {
-  const { language, platform, userAgent } = window.navigator;
-  const s = `${platform}|${language}|${screen.width}x${screen.height}|${userAgent}`;
-  return btoa(s);
+// Strip everything except a-z 0-9 . - _
+function sanitize(s: string): string {
+  return s.replace(/[^a-z0-9._-]/gi, '');
+}
+
+/** Get OS type + version via Tauri plugin, e.g. "macOS_15.6.1", "windows_10.0.22631" */
+function getOSInfo(): string {
+  if (isWeb) return 'web';
+  try {
+    return sanitize(`${osType()}_${osVersion()}`);
+  } catch {
+    return 'Unknown';
+  }
+}
+
+/** Build the /api/version URL with plain-text sanitized params. src: "ping" (startup) or "check" (modal). */
+function buildVersionUrl(src: 'ping' | 'check'): string {
+  const ver = sanitize(VERSION);
+  const os = getOSInfo();
+  const lang = sanitize(navigator?.language ?? '');
+  const scr = sanitize(`${screen.width}x${screen.height}`);
+  return `${BINDERUS_WEB_URL}/api/version?v=${ver}&os=${os}&lang=${lang}&scr=${scr}&src=${src}`;
 }
 
 export async function checkLatestVersion(): Promise<VersionCheckResult> {
   try {
-    const url = `${BINDERUS_WEB_URL}/api/version?current=${encodeURIComponent(VERSION)}&s=${navInfo()}`;
-    const res = await httpFetch(url);
+    const res = await httpFetch(buildVersionUrl('check'));
     const data = await res.json() as VersionResponse;
     if (data?.version && data.version !== VERSION) {
       return {
@@ -39,4 +60,11 @@ export async function checkLatestVersion(): Promise<VersionCheckResult> {
     // Silently ignore failures
   }
   return { latestVersion: null, updateUrl: null };
+}
+
+/** Fire-and-forget version check 10s after launch. Server captures IP automatically. */
+export function scheduleStartupVersionPing(): void {
+  setTimeout(() => {
+    httpFetch(buildVersionUrl('ping')).catch(() => {});
+  }, 10_000);
 }

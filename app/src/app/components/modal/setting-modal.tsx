@@ -437,7 +437,7 @@ export default function SettingModal({ isOpen, onClose }: Props) {
                       <div>
                         <div className="dialog-version">
                           {t('TEXT_CURRENT_VERSION')}: {VERSION} {t('TEXT_FREE_CAPS')} - {t('TEXT_REQUEST')}{' '}
-                          <b>{t('TEXT_PRO_CAPS')}</b> {t('TEXT_LICENSE_FOR_FREE')}:
+                          <b>{t('TEXT_PRO_CAPS')}</b> {t('TEXT_EARLY_ACCESS')}:
                         </div>
                         <div className="flex gap-2 items-center mt-2">
                           <input

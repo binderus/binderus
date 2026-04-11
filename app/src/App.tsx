@@ -7,12 +7,15 @@ import AppContainer from './app/components/app-container/app-container';
 import { useAppContext } from './app/hooks/use-app-context';
 // import MainPage from './app/pages/main-page';
 import TestPage from './app/pages/test-page';
-import { BUILD_EXPIRED_DATE_STR, DEFAULT_LANG, DEFAULT_THEME } from './app/utils/constants';
-import { initApp, getStartupError, getLockStatus, resetToFilesystem, quitApp, readVaultSettings, writeVaultSettings, getVaultPath } from './app/utils/tauri-utils';
+import { DEFAULT_LANG, DEFAULT_THEME } from './app/utils/constants';
+import { initApp, getStartupError, getLockStatus, resetToFilesystem, quitApp, readVaultSettings, writeVaultSettings, getVaultPath, flushAllPendingWrites } from './app/utils/tauri-utils';
 import { isDarkTheme } from './app/utils/theme-registry';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { listen } from '@tauri-apps/api/event';
 import { debounce, getUserLocale, initI18n, isWeb, matchSupportedLocale, t } from './app/utils/base-utils';
 import LockScreenOverlay from './app/components/lock-screen/lock-screen-overlay';
 import { useAutoLock } from './app/hooks/use-auto-lock';
+import { scheduleStartupVersionPing } from './app/hooks/use-version-check';
 import { FiAlertTriangle } from 'react-icons/fi';
 
 function App() {
@@ -42,16 +45,6 @@ function App() {
   } = useAppContext();
 
   useAutoLock();
-
-  const checkExpiredBuild = debounce(() => {
-    if (BUILD_EXPIRED_DATE_STR) {
-      const expiredDate = new Date(BUILD_EXPIRED_DATE_STR); // a future date when this build will expire
-      const isExpired = new Date() > expiredDate;
-      if (isExpired) {
-        alert(t('APP_EXPIRED'));
-      }
-    }
-  }, 100);
 
   const init = async () => {
     if (isWeb) {
@@ -119,7 +112,6 @@ function App() {
 
     setSettingJson(settingJson);
     setInitDone(true);
-    checkExpiredBuild();
   };
   const initDebounced = debounce(
     () => init().catch((e) => console.error('App init failed:', e)),
@@ -128,6 +120,33 @@ function App() {
 
   useEffect(() => {
     initDebounced();
+    scheduleStartupVersionPing();
+
+    // Graceful shutdown: flush pending debounced writes before quit.
+    // Handles both window close (red X) and Cmd+Q (custom menu event).
+    if (!isWeb) {
+      const gracefulShutdown = async () => {
+        try {
+          await flushAllPendingWrites();
+        } catch (e) {
+          console.error('Flush on quit failed:', e);
+        }
+        await quitApp(); // Rust side checkpoints WAL then exits
+      };
+
+      const unlisteners: (() => void)[] = [];
+
+      // Red X / window close button
+      getCurrentWindow().onCloseRequested(async (event) => {
+        event.preventDefault();
+        await gracefulShutdown();
+      }).then((fn) => unlisteners.push(fn));
+
+      // Cmd+Q / menu Quit (macOS) — emitted by Rust menu handler
+      listen('graceful-quit', () => gracefulShutdown()).then((fn) => unlisteners.push(fn));
+
+      return () => unlisteners.forEach((fn) => fn());
+    }
   }, []);
 
   useEffect(() => {

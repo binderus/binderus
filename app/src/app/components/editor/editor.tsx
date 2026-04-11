@@ -1,7 +1,7 @@
 /* Copyright 2021, Milkdown by Mirone. */
 import { editorViewCtx, parserCtx } from '@milkdown/core';
 import { Slice } from '@milkdown/prose/model';
-import { ReactEditor, useEditor } from '@milkdown/react';
+import { Milkdown, useEditor } from '@milkdown/react';
 import { forwardRef, useImperativeHandle } from 'react';
 
 import { createEditor } from './createEditor';
@@ -16,15 +16,14 @@ export type MilkdownRef = { update: (markdown: string) => void };
 
 export const Editor = forwardRef<MilkdownRef, Props>(({ content, readOnly, onChange }, ref) => {
   const {
-    editor,
-    getInstance,
-    loading: editorLoading
-  } = useEditor((root) => createEditor(root, content, readOnly, onChange), [readOnly, content, onChange]);
+    loading: editorLoading,
+    get: getEditor
+  } = useEditor((root) => createEditor(root, content, readOnly, onChange), []);
 
   useImperativeHandle(ref, () => ({
     update: (markdown: string) => {
       if (editorLoading) return;
-      const editor = getInstance();
+      const editor = getEditor();
 
       editor?.action((ctx) => {
         const view = ctx.get(editorViewCtx);
@@ -37,5 +36,5 @@ export const Editor = forwardRef<MilkdownRef, Props>(({ content, readOnly, onCha
     }
   }));
 
-  return <ReactEditor editor={editor} />;
+  return <Milkdown />;
 });

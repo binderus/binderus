@@ -4,6 +4,7 @@ import { MdEditor } from '../editor/md-editor';
 import { invoke } from '@tauri-apps/api/core';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { debounce } from '../../utils/base-utils';
+import { registerEditorFlush, unregisterEditorFlush } from '../../utils/tauri-utils';
 import { AiFillStar, AiOutlineStar } from 'react-icons/ai';
 import { FiMoreVertical } from 'react-icons/fi';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
@@ -14,6 +15,7 @@ import { mockWriteFile } from '../../utils/mock-data';
 import VideoPlayer from '../video-player/video-player';
 import ImgPreview from '../img-preview/img-preview';
 import AppPopover from '../app-popover/app-popover';
+import { toast as reactToast } from 'react-toastify';
 import AudioPlayer from '../audio-player/audio-player';
 import CodeEditor from '../code-editor/code-editor';
 import BacklinksPanel from '../backlinks-panel/backlinks-panel';
@@ -62,7 +64,13 @@ export default ({ onRenameFile, onFileSelect, isLoading, content, editorKey, cla
 
   useEffect(() => {
     document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
+    // Listen for Quick Switcher "Export and Print" command
+    const openExport = () => setExportModalOpen(true);
+    window.addEventListener('open-export-modal', openExport);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('open-export-modal', openExport);
+    };
   }, [handleKeyDown]);
 
   const editorOnChange = async (md: string) => {
@@ -83,6 +91,13 @@ export default ({ onRenameFile, onFileSelect, isLoading, content, editorKey, cla
   };
 
   const debouncedEditorOnChange = useMemo(() => debounce(editorOnChange, 200), [file?.file_path]);
+
+  // Register editor flush so graceful shutdown can fire pending debounced writes
+  useEffect(() => {
+    registerEditorFlush(() => debouncedEditorOnChange.flush());
+    return () => unregisterEditorFlush();
+  }, [debouncedEditorOnChange]);
+
   const title = file?.file_name;
 
   const favClicked = () => {
@@ -126,7 +141,9 @@ export default ({ onRenameFile, onFileSelect, isLoading, content, editorKey, cla
                   <button
                     className="menu-item"
                     onClick={async () => {
-                      if (!isWeb) await revealItemInDir(file.file_path);
+                      if (isWeb) return;
+                      if (useAppStore.getState().storageBackend !== 'filesystem') { reactToast.info(t('APP_SHOW_FILE_LOCATION_DB')); return; }
+                      await revealItemInDir(file.file_path);
                     }}
                   >
                     {t('TEXT_SHOW_FILE_LOCATION')}

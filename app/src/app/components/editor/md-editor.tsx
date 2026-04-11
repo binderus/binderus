@@ -1,58 +1,110 @@
 /**
- * Description: Rich markdown editor component built on Milkdown. Heavy plugins (diagram, math,
+ * Description: Rich markdown editor component built on Milkdown v7. Heavy plugins (diagram, math,
  *   prism, emoji, slash, tooltip, upload) are lazy-loaded to reduce initial bundle size.
- * Requirements: @milkdown/core, @milkdown/react, and related plugin packages.
+ * Requirements: @milkdown/core, @milkdown/react, @milkdown/ctx and related plugin packages.
  * Inputs: content (markdown string), filePath, readOnly flag, onChange callback.
  * Outputs: Rendered WYSIWYG editor with full plugin support.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { defaultValueCtx, Editor, editorViewOptionsCtx, remarkStringifyOptionsCtx, rootCtx } from '@milkdown/core';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
-import { ReactEditor, useEditor } from '@milkdown/react';
-import { $shortcut } from '@milkdown/utils';
+import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
+import { $remark, $shortcut, $inputRule } from '@milkdown/utils';
+import { katexOptionsCtx, mathInlineSchema } from '@milkdown/plugin-math';
+import { nodeRule } from '@milkdown/prose';
+import { diagramNodeViewPlugin } from './diagram-nodeview';
+import { mathNodeViewPlugin } from './math-nodeview';
+
+// Custom math inline input rule: stricter regex requires non-whitespace at both ends of content,
+// preventing currency patterns like "$2000 and $3000" from being treated as inline math.
+const currencySafeMathInlineInputRule = $inputRule(
+  (ctx) => nodeRule(/(?:\$)(\S[^$]*\S|\S)(?:\$)$/, mathInlineSchema.type(ctx), {
+    beforeDispatch: ({ tr, match, start }) => {
+      tr.insertText(match[1] ?? '', start + 1);
+    }
+  })
+);
+import { codeBlockNodeViewPlugin } from './code-block-nodeview';
+import { linkInputRule, linkTooltipPlugin } from './link-plugin';
+import { tableToolbarPlugin } from './table-toolbar-plugin';
+import { taskListPlugin } from './task-list-plugin';
+import { columnResizingPlugin } from '@milkdown/preset-gfm';
+import { createSlashMenuSpec } from './slash-menu';
 // Core plugins — small, loaded eagerly
 import { clipboard } from '@milkdown/plugin-clipboard';
 import { cursor } from '@milkdown/plugin-cursor';
 import { history } from '@milkdown/plugin-history';
 import { indent } from '@milkdown/plugin-indent';
 import { trailing } from '@milkdown/plugin-trailing';
+import { commonmark } from '@milkdown/preset-commonmark';
 import { gfm } from '@milkdown/preset-gfm';
 import { nord } from '@milkdown/theme-nord';
-import { ThemeColor } from '@milkdown/core';
-import { useAppContext } from '../../hooks/use-app-context';
 import { useAppStore } from '../../hooks/use-app-store';
 import { sinkListItem, liftListItem } from '@milkdown/prose/schema-list';
-import type { MilkdownPlugin } from '@milkdown/core';
-import { wikilinkInputRule, linkClickHandler, preprocessWikilinks, preprocessUnicode, postprocessWikilinks, postprocessUnicode } from './wikilink-plugin';
+import { 
+  wikilinkInputRule, 
+  linkClickHandler, 
+  preprocessWikilinks, 
+  preprocessUnicode, 
+  postprocessWikilinks, 
+  postprocessUnicode, 
+  unescapeLinkUrls 
+} from './wikilink-plugin';
 
-/** Each entry can be a single plugin or an AtomList (MilkdownPlugin[]) */
-type PluginEntry = MilkdownPlugin | MilkdownPlugin[];
+// Import CSS for nord theme
+import '@milkdown/theme-nord/style.css';
 
 /** Lazy-loaded heavy plugins, resolved once and cached in module scope. */
-let lazyPluginsCache: PluginEntry[] | null = null;
-let lazyPluginsPromise: Promise<PluginEntry[]> | null = null;
+type LazyPlugins = {
+  plugins: any[];
+  slashPlugin: any;
+};
 
-function loadHeavyPlugins(): Promise<PluginEntry[]> {
+let lazyPluginsCache: LazyPlugins | null = null;
+let lazyPluginsPromise: Promise<LazyPlugins> | null = null;
+
+function loadHeavyPlugins(): Promise<LazyPlugins> {
   if (lazyPluginsCache) return Promise.resolve(lazyPluginsCache);
   if (!lazyPluginsPromise) {
     lazyPluginsPromise = Promise.all([
       import('@milkdown/plugin-diagram'),
       import('@milkdown/plugin-math'),
       import('@milkdown/plugin-prism'),
-      import('@milkdown/plugin-emoji'),
       import('@milkdown/plugin-slash'),
       import('@milkdown/plugin-tooltip'),
       import('@milkdown/plugin-upload'),
-    ]).then(([diagram, math, prism, emoji, slash, tooltip, upload]) => {
-      lazyPluginsCache = [
-        diagram.diagram,
-        math.math,
-        prism.prism,
-        emoji.emoji,
-        slash.slash,
-        tooltip.tooltip,
-        upload.upload,
-      ];
+      import('@milkdown/plugin-block'),
+    ]).then(([diagram, math, prism, slash, tooltip, upload, block]) => {
+      // In v7, some plugins are factories or named differently.
+      // For slash and tooltip, they use factories.
+      const slashPlugin = slash.slashFactory('default');
+      const tooltipPlugin = tooltip.tooltipFactory('default');
+
+      lazyPluginsCache = {
+        plugins: [
+          diagram.diagram,
+          diagramNodeViewPlugin,
+          math.remarkMathPlugin,
+          math.katexOptionsCtx,
+          math.mathInlineSchema,
+          math.mathBlockSchema,
+          math.mathBlockInputRule,
+          currencySafeMathInlineInputRule,
+          mathNodeViewPlugin,
+          prism.prism,
+          codeBlockNodeViewPlugin,
+          linkInputRule,
+          linkTooltipPlugin,
+          taskListPlugin,
+          columnResizingPlugin,
+          tableToolbarPlugin,
+          slashPlugin,
+          tooltipPlugin,
+          upload.upload,
+          block.block,
+        ],
+        slashPlugin,
+      };
       return lazyPluginsCache;
     });
   }
@@ -60,8 +112,8 @@ function loadHeavyPlugins(): Promise<PluginEntry[]> {
 }
 
 /** Hook that returns heavy plugins once loaded, or null while loading. */
-function useLazyPlugins(): PluginEntry[] | null {
-  const [plugins, setPlugins] = useState<PluginEntry[] | null>(lazyPluginsCache);
+function useLazyPlugins(): LazyPlugins | null {
+  const [plugins, setPlugins] = useState<LazyPlugins | null>(lazyPluginsCache);
   useEffect(() => {
     if (lazyPluginsCache) {
       setPlugins(lazyPluginsCache);
@@ -80,53 +132,52 @@ interface Props {
 }
 
 /** Inner editor component — rendered only after lazy plugins are loaded. */
-const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Props & { heavyPlugins: PluginEntry[] }) => {
-  const { theme } = useAppContext();
-
-  // Use CSS variables for theme colors so all themes work automatically
-  const extendedNord = nord.override((emotion, manager) => {
-    manager.set(ThemeColor, ([key, opacity]) => {
-      // Read computed CSS variable values at render time
-      const style = getComputedStyle(document.documentElement);
-      const editorBg = style.getPropertyValue('--editor-bg').trim() || '#2e3440';
-      const editorCodeBg = style.getPropertyValue('--editor-code-bg').trim() || '#222';
-      const editorFg = style.getPropertyValue('--editor-fg').trim() || '#ccc';
-      const accent = style.getPropertyValue('--accent').trim() || '#88c0d0';
-      const borderPrimary = style.getPropertyValue('--border-primary').trim() || '#4c566a';
-      switch (key) {
-        case 'background':
-          return editorCodeBg; // code block BG color
-        case 'surface':
-          return editorCodeBg; // code block type-dropdown & toolbar BG
-        case 'neutral':
-          return editorFg; // code block text color
-        case 'line':
-        case 'shadow':
-        case 'solid':
-          return borderPrimary;
-        case 'primary':
-          return editorFg;
-        case 'secondary':
-          return accent; // links in editor & selected text BG color
-        default:
-          return editorBg;
-      }
-    });
-  });
+const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Props & { heavyPlugins: LazyPlugins }) => {
+  // Use CSS variables for theme colors via index.css overrides for .milkdown
 
   // Stable ref so useEditor factory captures plugins without re-creating
   const pluginsRef = useRef(heavyPlugins);
   pluginsRef.current = heavyPlugins;
 
-  const { editor } = useEditor(
+  const { loading, get: getEditor } = useEditor(
     (root) => {
-      let e = Editor.make()
+      return Editor.make()
         .config((ctx) => {
-          const text = preprocessWikilinks(preprocessUnicode(content ?? ''));
-
           ctx.set(rootCtx, root);
+          const text = preprocessWikilinks(preprocessUnicode(content ?? ''));
           ctx.set(defaultValueCtx, text);
-          ctx.update(editorViewOptionsCtx, (prev) => ({ ...prev, editable: () => !readOnly }));
+        })
+        .config(nord)
+        .use(commonmark)
+        .use(gfm)
+        // Strip isInline flag so single \n renders as <br>, not a space.
+        // remarkLineBreak (commonmark) runs first and marks breaks isInline:true; we override that.
+        .use($remark('remarkSoftBreaks', () => () => (tree: any) => {
+          const fix = (node: any) => {
+            if (node.type === 'break' && node.data?.isInline) delete node.data;
+            node.children?.forEach(fix);
+          };
+          fix(tree);
+        }))
+        .use(clipboard)
+        .use(history)
+        .use(indent)
+        .use(cursor)
+        .use(listener)
+        .use(trailing)
+        .use(wikilinkInputRule)
+        .use(linkClickHandler)
+        .use(pluginsRef.current.plugins)
+        .config((ctx) => {
+          // Final configuration block after all plugins are registered
+          try {
+            ctx.set(pluginsRef.current.slashPlugin.key, createSlashMenuSpec(ctx));
+            ctx.update(editorViewOptionsCtx, (prev) => ({ ...prev, editable: () => !readOnly }));
+            ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }));
+            ctx.update(katexOptionsCtx.key, (prev) => ({ ...prev, throwOnError: false, strict: false }));
+          } catch (e) {
+            // Silently skip if contexts are still missing
+          }
 
           ctx.get(listenerCtx).markdownUpdated((_: any, markdown: string) => {
             if (!onChange) return;
@@ -136,31 +187,15 @@ const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Pr
                    .replace(/^(\s*)\\(#+)/gm, '$1$2')
                    .replace(/^(\s*\d+)\\\./gm, '$1.');
             }
+            md = unescapeLinkUrls(md);
+            // Remove blank lines between bullet list items (Milkdown v7 listItemSchema defaults
+            // spread:true, causing remark-stringify to add \n\n between nested list levels)
+            md = md.replace(/(^[ \t]*- [^\n]+)\n\n+(?=[ \t]*- )/gm, '$1\n');
             md = postprocessUnicode(postprocessWikilinks(md));
             onChange(md);
           });
-          ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }));
         })
-        .use(extendedNord)
-        .use(nord)
-        .use(gfm)
-        // Core plugins (eager)
-        .use(clipboard)
-        .use(history)
-        .use(indent)
-        .use(cursor)
-        .use(listener)
-        .use(trailing);
-
-      // Wikilink support ([[target]] → clickable link) + click handler for all links
-      e = e.use(wikilinkInputRule).use(linkClickHandler);
-
-      // Heavy plugins (lazy-loaded)
-      for (const plugin of pluginsRef.current) {
-        e = e.use(plugin);
-      }
-
-      e = e.use(
+        .use(
           $shortcut(() => ({
             Tab: (state, dispatch) => {
               const { $from } = state.selection;
@@ -171,7 +206,7 @@ const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Pr
                 ? listItemType
                 : (taskListItemType && parentNode?.type === taskListItemType)
                   ? taskListItemType
-                  : null;
+                : null;
               if (!activeType) return false;
               if ($from.parentOffset === 0) {
                 return sinkListItem(activeType)(state, dispatch);
@@ -188,7 +223,7 @@ const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Pr
                 ? listItemType
                 : (taskListItemType && parentNode?.type === taskListItemType)
                   ? taskListItemType
-                  : null;
+                : null;
               if (!activeType) return false;
               return liftListItem(activeType)(state, dispatch);
             },
@@ -235,11 +270,23 @@ const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Pr
             }
           }))
         );
-
-      return e;
     },
     []
   );
+
+  useEffect(() => {
+    if (loading) return;
+    const editor = getEditor();
+    if (!editor) return;
+    editor.action((ctx) => {
+      try {
+        ctx.update(editorViewOptionsCtx, (prev) => ({ ...prev, editable: () => !readOnly }));
+        ctx.update(katexOptionsCtx.key, (prev) => ({ ...prev, throwOnError: false, strict: false }));
+      } catch {
+        // The editor can briefly recreate contexts during initialization in React 19.
+      }
+    });
+  }, [readOnly, loading]);
 
   /** Click on empty space below content → place caret at end of last line. */
   const handleWrapperClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -262,7 +309,7 @@ const MdEditorInner = ({ content, readOnly = false, onChange, heavyPlugins }: Pr
 
   return (
     <div className="milkdown-wrapper" style={{ flex: 1, display: 'flex', flexDirection: 'column', cursor: 'text' }} onClick={handleWrapperClick}>
-      <ReactEditor editor={editor} />
+      <Milkdown data-testid="milkdown-editor" />
     </div>
   );
 };

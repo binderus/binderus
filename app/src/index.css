@@ -441,6 +441,11 @@ code {
   color: var(--sidebar-fg-hover);
 }
 .sidebar-file-active {
+  display: flex;
+  align-items: center;
+  padding: 6px 16px;
+  font-size: 0.8125rem;
+  cursor: pointer;
   background-color: var(--sidebar-item-active);
   color: var(--icon-fg-hover);
 }
@@ -739,11 +744,34 @@ body.custom-styles {
   color: var(--editor-color) !important;
 }
 
+/* Milkdown v7: code blocks render as <pre><code> without .code-fence class */
 .code-fence,
 .code-fence pre,
+.milkdown .editor pre,
 .footnote-definition {
   background: var(--editor-code-bg) !important;
-  color: var(--editor-fg) !important;
+  color: var(--prism-fg) !important;
+}
+
+/* Give room for the absolutely-positioned language selector */
+.code-fence pre {
+  padding-top: 2rem !important;
+}
+
+/* Inline code: override Nord theme's light gray background and blue --color-nord10 color */
+.milkdown .editor :not(pre) > code {
+  background: var(--editor-code-bg) !important;
+  color: var(--prism-fg) !important;
+  border-radius: 0.25rem;
+  padding: 0.1em 0.3em;
+}
+
+/* Code inside pre (code block) should be transparent, not pick up inline code overrides */
+.milkdown .editor pre > code {
+  background: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
 }
 
 /* this applies to "p" tag => reduce default gap (margin: 30px 0) to look line a normal line by line */
@@ -773,31 +801,50 @@ body.custom-styles {
   font-size: 0.85em !important;
 }
 
+/* Blockquote: override Nord theme's serif font to match editor body font */
+.milkdown-theme-nord blockquote,
+.milkdown .editor blockquote {
+  font-family: inherit !important;
+  font-style: normal !important;
+}
+
 .milkdown .editor .list-item,
 .milkdown .editor .task-list-item {
   margin: 0.4em 0 !important;
   line-height: 1.6;
 }
-.milkdown .editor .task-list-item .icon.material-icons,
-.milkdown .editor .task-list-item .icon.material-icons-outlined {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  overflow: hidden;
-  font-size: 18px;
-  line-height: 1;
-  vertical-align: middle;
+
+/* Task list checkbox (Milkdown v7 — NodeView renders <input> + <span.task-content>) */
+.milkdown .editor li.task-list-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  list-style: none;
+}
+.milkdown .editor li.task-list-item .task-checkbox {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.milkdown .editor li.task-list-item[data-checked="true"] .task-content {
+  opacity: 0.55;
 }
 
 .emoji-wrapper {
   display: inline-block; /* fix: emoji / unicode takes the whole row */
 }
 
+.code-fence {
+  position: relative !important;
+}
 .code-fence_selector-wrapper {
   position: absolute !important;
-  right: 30px;
+  top: 8px;
+  right: 12px;
+  z-index: 1;
 }
 .code-fence_selector-list {
   color: var(--code-fence-selector-fg);
@@ -822,19 +869,157 @@ body.custom-styles {
   color: var(--fg-primary) !important;
 }
 
+/* Link tooltip — floating popover shown when cursor is inside a link
+   Appended to document.body so ProseMirror doesn't intercept its click events */
+.link-tooltip {
+  position: fixed;
+  display: none;
+  z-index: 30;
+  background: var(--popover-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 5px 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  min-width: 180px;
+  max-width: 320px;
+}
+.link-tooltip-url-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.link-tooltip-url {
+  flex: 1;
+  font-size: 12px;
+  color: var(--editor-link);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.link-tooltip-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-secondary);
+  font-size: 13px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.link-tooltip-btn:hover {
+  background: var(--menu-item-hover-bg);
+  color: var(--menu-item-hover-fg);
+}
+.link-tooltip-btn.link-tooltip-save {
+  font-size: 11px;
+  color: var(--accent);
+}
+.link-tooltip-form {
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border-primary);
+}
+.link-tooltip-input {
+  background: var(--dialog-input-bg);
+  border: 1px solid var(--dialog-input-border);
+  border-radius: 4px;
+  color: var(--fg-primary);
+  font-size: 12px;
+  padding: 4px 7px;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+.link-tooltip-input:focus {
+  border-color: var(--accent);
+}
+
+/* Table toolbar — floating action bar above tables */
+.table-toolbar {
+  position: absolute;
+  display: none;
+  flex-direction: row;
+  gap: 4px;
+  z-index: 20;
+  background: var(--popover-bg);
+  border: 1px solid var(--border-primary);
+  border-radius: 6px;
+  padding: 3px 5px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: all;
+}
+.table-toolbar-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-secondary);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.4;
+}
+.table-toolbar-btn:hover {
+  background: var(--menu-item-hover-bg);
+  color: var(--menu-item-hover-fg);
+}
+
+/* prosemirror-tables: column resize handle and cell selection overlay
+   (replaces @milkdown/prose/style/tables.css which is not in the package exports map) */
+.ProseMirror .tableWrapper { overflow-x: auto; }
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  overflow: hidden;
+}
+.ProseMirror td, .ProseMirror th {
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+.ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  z-index: 20;
+  background: var(--accent);
+  pointer-events: none;
+}
+.ProseMirror.resize-cursor { cursor: col-resize; }
+.ProseMirror .selectedCell::after {
+  z-index: 2;
+  position: absolute;
+  content: '';
+  inset: 0;
+  background: rgba(136, 192, 208, 0.25);
+  pointer-events: none;
+}
+
 /* Table styles */
 .milkdown .editor table {
-  border-color: var(--table-border) !important;
+  border-collapse: collapse !important;
+  border: 1px solid var(--table-border) !important;
+  width: 100%;
+}
+.milkdown .editor th,
+.milkdown .editor td {
+  border: 1px solid var(--table-border) !important;
+  padding: 6px 12px !important;
 }
 .milkdown .editor th {
   background-color: var(--table-header-bg) !important;
   color: var(--table-header-fg) !important;
-  border-color: var(--table-border) !important;
+  font-weight: 600 !important;
 }
 .milkdown .editor td {
   background-color: transparent !important;
   color: var(--fg-primary) !important;
-  border-color: var(--table-border) !important;
 }
 
 /* Mermaid diagrams */
@@ -851,7 +1036,13 @@ body.custom-styles {
   fill: var(--mermaid-text) !important;
 }
 .milkdown .editor svg[id^='mermaid'] .edgePath path,
-.milkdown .editor svg[aria-roledescription] .edgePath path {
+.milkdown .editor svg[aria-roledescription] .edgePath path,
+.milkdown .editor svg[id^='mermaid'] .flowchart-link,
+.milkdown .editor svg[aria-roledescription] .flowchart-link,
+.milkdown .editor svg[id^='mermaid'] .edge-thickness-normal,
+.milkdown .editor svg[aria-roledescription] .edge-thickness-normal,
+.milkdown .editor svg[id^='mermaid'] .edge-thickness-thick,
+.milkdown .editor svg[aria-roledescription] .edge-thickness-thick {
   stroke: var(--mermaid-edge) !important;
 }
 .milkdown .editor svg[id^='mermaid'] .arrowheadPath,
@@ -860,6 +1051,30 @@ body.custom-styles {
 .milkdown .editor svg[aria-roledescription] marker path {
   fill: var(--mermaid-edge) !important;
   stroke: var(--mermaid-edge) !important;
+}
+
+/* MathLive math nodes */
+.milkdown .mathlive-nodeview {
+  color: var(--editor-fg);
+}
+
+.milkdown .mathlive-nodeview--inline {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.milkdown .mathlive-nodeview--block {
+  display: block;
+  margin: 0.5rem 0;
+  overflow-x: auto;
+  cursor: pointer;
+}
+
+.milkdown .mathlive-nodeview math-field {
+  min-width: 3rem;
+  width: 100%;
 }
 
 /* ------------ Font Families ------------ */

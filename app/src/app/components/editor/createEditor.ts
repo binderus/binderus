@@ -1,23 +1,50 @@
 /* Copyright 2021, Milkdown by Mirone. */
 import { defaultValueCtx, Editor, editorViewOptionsCtx, remarkStringifyOptionsCtx, rootCtx } from '@milkdown/core';
-import { $shortcut } from '@milkdown/utils';
+import { $remark, $shortcut, $inputRule } from '@milkdown/utils';
+import { katexOptionsCtx, remarkMathPlugin, mathInlineSchema, mathBlockSchema, mathBlockInputRule } from '@milkdown/plugin-math';
 import { useAppStore } from '../../hooks/use-app-store';
+import { createSlashMenuSpec } from './slash-menu';
+import { nodeRule } from '@milkdown/prose';
+import { diagramNodeViewPlugin } from './diagram-nodeview';
+import { mathNodeViewPlugin } from './math-nodeview';
+
+// Custom math inline input rule: stricter regex requires non-whitespace at both ends of content,
+// preventing currency patterns like "$2000 and $3000" from being treated as inline math.
+const currencySafeMathInlineInputRule = $inputRule(
+  (ctx) => nodeRule(/(?:\$)(\S[^$]*\S|\S)(?:\$)$/, mathInlineSchema.type(ctx), {
+    beforeDispatch: ({ tr, match, start }) => {
+      tr.insertText(match[1] ?? '', start + 1);
+    }
+  })
+);
+import {
+  linkClickHandler,
+  postprocessUnicode,
+  postprocessWikilinks,
+  preprocessUnicode,
+  preprocessWikilinks,
+  unescapeLinkUrls,
+  wikilinkInputRule,
+} from './wikilink-plugin';
+import { codeBlockNodeViewPlugin } from './code-block-nodeview';
+import { linkInputRule, linkTooltipPlugin } from './link-plugin';
+import { tableToolbarPlugin } from './table-toolbar-plugin';
+import { taskListPlugin } from './task-list-plugin';
+import { columnResizingPlugin } from '@milkdown/preset-gfm';
 import { block } from '@milkdown/plugin-block';
 import { clipboard } from '@milkdown/plugin-clipboard';
 import { cursor } from '@milkdown/plugin-cursor';
-// import { diagram } from '@milkdown/plugin-diagram';
-import { emoji } from '@milkdown/plugin-emoji';
+import { diagram } from '@milkdown/plugin-diagram';
 import { history } from '@milkdown/plugin-history';
 import { indent } from '@milkdown/plugin-indent';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
-import { math } from '@milkdown/plugin-math';
-import { menu } from '@milkdown/plugin-menu';
+// math plugin imported as individual components above (to replace the inline input rule)
 import { prism } from '@milkdown/plugin-prism';
-import { slash } from '@milkdown/plugin-slash';
-// import { tooltip } from '@milkdown/plugin-tooltip';
+import { slashFactory } from '@milkdown/plugin-slash';
 import { trailing } from '@milkdown/plugin-trailing';
-// import { upload } from '@milkdown/plugin-upload';
+import { commonmark } from '@milkdown/preset-commonmark';
 import { gfm } from '@milkdown/preset-gfm';
+import { sinkListItem, liftListItem } from '@milkdown/prose/schema-list';
 import { nord } from '@milkdown/theme-nord';
 
 export const createEditor = (
@@ -26,44 +53,107 @@ export const createEditor = (
   readOnly: boolean | undefined,
   onChange?: (markdown: string) => void
 ) => {
+  const slash = slashFactory('default');
+
   const editor = Editor.make()
     .config((ctx) => {
       ctx.set(rootCtx, root);
-      ctx.set(defaultValueCtx, defaultValue);
+      ctx.set(defaultValueCtx, preprocessWikilinks(preprocessUnicode(defaultValue)));
+
       ctx.update(editorViewOptionsCtx, (prev) => ({ ...prev, editable: () => !readOnly }));
+      ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }));
+      ctx.update(katexOptionsCtx.key, (prev) => ({ ...prev, throwOnError: false, strict: false }));
+      ctx.set(slash.key, createSlashMenuSpec(ctx));
+
       ctx.get(listenerCtx).markdownUpdated((_, markdown) => {
-        // Strip trailing backslash hard-break markers (inserted organically by remark-stringify) before saving
+        if (!onChange) return;
         let md = markdown.replace(/\\\n/g, '\n');
         if (useAppStore.getState().enterMode === 'normal') {
-          // Unescape lists: \-, \>, \*, \+ at the start of visual lines trapped inside standard paragraph blocks
+          // Unescape special chars that normal-enter mode escaped
           md = md.replace(/^(\s*)\\([->*+])/gm, '$1$2')
-               // Unescape headings: \#
                .replace(/^(\s*)\\(#+)/gm, '$1$2')
-               // Unescape numbered lists: 1\.
                .replace(/^(\s*\d+)\\\./gm, '$1.');
         }
-        onChange?.(md);
+        md = unescapeLinkUrls(md);
+        // Remove blank lines between bullet list items (Milkdown v7 listItemSchema defaults
+        // spread:true, causing remark-stringify to add \n\n between nested list levels)
+        md = md.replace(/(^[ \t]*- [^\n]+)\n\n+(?=[ \t]*- )/gm, '$1\n');
+        md = postprocessUnicode(postprocessWikilinks(md));
+        onChange(md);
       });
-      // Use "-" for bullet list markers instead of "*"
-      ctx.update(remarkStringifyOptionsCtx, (prev) => ({ ...prev, bullet: '-' as const }));
     })
-    .use(emoji)
+    .config(nord)
+    .use(commonmark)
     .use(gfm)
-    .use(listener)
+    // Strip isInline flag so single \n renders as <br>, not a space.
+    // remarkLineBreak (commonmark) runs first and marks breaks isInline:true; we override that.
+    .use($remark('remarkSoftBreaks', () => () => (tree: any) => {
+      const fix = (node: any) => {
+        if (node.type === 'break' && node.data?.isInline) delete node.data;
+        node.children?.forEach(fix);
+      };
+      fix(tree);
+    }))
     .use(clipboard)
     .use(history)
-    .use(cursor)
-    .use(prism)
-    .use(math)
     .use(indent)
-    // .use(upload)
-    // .use(diagram)
-    // .use(tooltip)
+    .use(cursor)
+    .use(listener)
+    .use(wikilinkInputRule)
+    .use(linkClickHandler)
+    .use(diagram)
+    .use(diagramNodeViewPlugin)
+    .use(remarkMathPlugin)
+    .use(katexOptionsCtx)
+    .use(mathInlineSchema)
+    .use(mathBlockSchema)
+    .use(mathBlockInputRule)
+    .use(currencySafeMathInlineInputRule)
+    .use(mathNodeViewPlugin)
+    .use(prism)
+    .use(linkInputRule)
+    .use(linkTooltipPlugin)
+    .use(codeBlockNodeViewPlugin)
+    .use(taskListPlugin)
+    .use(columnResizingPlugin)
+    .use(tableToolbarPlugin)
     .use(slash)
+    .use(trailing)
+    .use(block)
     .use(
       // Override Enter in paragraphs to insert a hard break (single newline)
       // instead of splitting into a new paragraph. Lists keep their normal Enter behavior.
       $shortcut(() => ({
+        Tab: (state, dispatch) => {
+          const { $from } = state.selection;
+          const parentNode = $from.node(-1);
+          const listItemType = state.schema.nodes['list_item'];
+          const taskListItemType = state.schema.nodes['task_list_item'];
+          const activeType = (listItemType && parentNode?.type === listItemType)
+            ? listItemType
+            : (taskListItemType && parentNode?.type === taskListItemType)
+              ? taskListItemType
+            : null;
+          if (!activeType) return false;
+          if ($from.parentOffset === 0) {
+            return sinkListItem(activeType)(state, dispatch);
+          }
+          dispatch?.(state.tr.insertText('\t'));
+          return true;
+        },
+        'Shift-Tab': (state, dispatch) => {
+          const { $from } = state.selection;
+          const parentNode = $from.node(-1);
+          const listItemType = state.schema.nodes['list_item'];
+          const taskListItemType = state.schema.nodes['task_list_item'];
+          const activeType = (listItemType && parentNode?.type === listItemType)
+            ? listItemType
+            : (taskListItemType && parentNode?.type === taskListItemType)
+              ? taskListItemType
+            : null;
+          if (!activeType) return false;
+          return liftListItem(activeType)(state, dispatch);
+        },
         Enter: (state, dispatch) => {
           // Read enterMode at call time so the setting takes effect without editor re-init
           if (useAppStore.getState().enterMode !== 'normal') return false;
@@ -81,9 +171,9 @@ export const createEditor = (
           });
           const currentLine = $from.parent.textBetween(lineParentOffset, $from.parentOffset);
 
+          if (currentLine.trim() === '' || /^#{1,6}\s*$/.test(currentLine) || /^(>|-|\*|\d+\.)\s*$/.test(currentLine)) return false;
+
           // Handle code fence trigger (``` or ~~~ with optional language).
-          // Input rules won't fire here because the regex requires text at the block start,
-          // but in normal-Enter mode prior content lives in the same paragraph.
           const fenceMatch = currentLine.match(/^(```|~~~)([a-z]*)$/);
           if (fenceMatch && dispatch) {
             const fenceType = state.schema.nodes['fence'];
@@ -92,7 +182,6 @@ export const createEditor = (
             const lineDocStart = $from.start() + lineParentOffset;
             let tr = state.tr;
             if (lineParentOffset > 0) {
-              // Remove the hard break immediately before the trigger + the trigger itself, then split
               tr = tr.delete(lineDocStart - 1, $from.pos);
               tr = tr.split(tr.mapping.map(lineDocStart - 1));
             } else {
@@ -110,11 +199,7 @@ export const createEditor = (
           return true;
         }
       }))
-    )
-    .use(nord)
-    .use(trailing)
-    .use(block)
-    .use(menu);
+    );
 
   return editor;
 };
