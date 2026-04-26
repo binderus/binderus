@@ -30,4 +30,4 @@ Here are some highlights of Binderus:
 
 ---
 
-<img src="./docs/binderus-demo.gif">
+<img src="./docs/binderus-demo-3.gif">
