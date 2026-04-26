@@ -1,0 +1,14 @@
+{
+  "IDLE": "Pomodoro",
+  "FOCUS": "Fokus",
+  "BREAK": "Pause",
+  "DONE": "Pomodoro beendet",
+  "PAUSED_SUFFIX": "(pausiert)",
+  "TOOLTIP_IDLE": "Klicken, um eine 25-minütige Fokussitzung zu starten",
+  "TOOLTIP_RUNNING": "Zum Pausieren klicken",
+  "TOOLTIP_PAUSED": "Zum Fortsetzen klicken",
+  "TOOLTIP_DONE": "Zum Zurücksetzen klicken",
+  "ACTION_PAUSE": "Pausieren",
+  "ACTION_PLAY": "Fortsetzen",
+  "ACTION_STOP": "Stoppen"
+}

@@ -31,10 +31,13 @@ export const themeValues = Object.values(Theme).filter((value) => typeof value =
 
 export { isDarkTheme } from '../utils/theme-registry';
 
+export type EditorMode = 'md' | 'md-text';
+
 export interface EditorTab {
   file_path: string;
   file_name: string;
   content: string | null;
   isDirty: boolean;
   scrollPos?: number;
+  editorMode?: EditorMode;
 }

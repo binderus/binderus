@@ -66,7 +66,6 @@ export default function LockScreenOverlay() {
       <div className="flex flex-col items-center gap-4 p-8 rounded-2xl shadow-2xl" style={{ background: 'var(--bg-primary)', minWidth: 320, maxWidth: 400, width: '90%' }}>
         <FiLock size={40} className="opacity-70" />
         <div className="text-xl font-semibold">{t('LOCK_TITLE')}</div>
-        <div className="text-sm opacity-60 text-center">{t('LOCK_SUBTITLE')}</div>
 
         {!confirmReset ? (
           <>
@@ -106,6 +105,7 @@ export default function LockScreenOverlay() {
               </button>
             ) : (
               <div className="text-xs opacity-40 text-center">
+                <div className="mb-1">{t('LOCK_SUBTITLE')}</div>
                 {t('LOCK_FORGOT_PASSPHRASE')}
               </div>
             )}

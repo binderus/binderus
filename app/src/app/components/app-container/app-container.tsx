@@ -1,24 +1,30 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { toastError } from '../toaster/toaster';
 import { FileType, PageProps } from '../../types';
 import AppFileList from '../app-file-list/app-file-list';
-import { getFileFromInternalLink, lockDb, renameFile } from '../../utils/tauri-utils';
+import { getFileFromInternalLink, invalidateReadCache, lockDb, readFileCached, renameFile } from '../../utils/tauri-utils';
 import { mockReadFile } from '../../utils/mock-data';
 import { useAppContext } from '../../hooks/use-app-context';
-import NewsModal from '../modal/news-modal';
-import FeedbackModal from '../modal/feedback-modal';
+const NewsModal = lazy(() => import('../modal/news-modal'));
+const FeedbackModal = lazy(() => import('../modal/feedback-modal'));
+const ConfirmDialog = lazy(() => import('../confirm-dialog/confirm-dialog'));
+const FolderPickerHost = lazy(() => import('../modal/folder-picker-host'));
+const ImagePreviewOverlay = lazy(() => import('../image-preview-overlay/image-preview-overlay'));
+const ManagePluginsModal = lazy(() => import('../modal/manage-plugins-modal'));
 import AppModeTabs, { ModeTab, nextTab, previousTab } from '../app-mode-tabs/app-mode-tabs';
 import AppEditorPanel from '../app-editor-panel/app-editor-panel';
 import AppSearchPanel from '../app-search-panel/app-search-panel';
 import TabBar from '../tab-bar/tab-bar';
 import RawMdPanel from '../raw-md-panel/raw-md-panel';
-import { AiOutlineQuestionCircle } from 'react-icons/ai';
+import StatusBar from '../status-bar/status-bar';
+import { BsQuestionCircle } from 'react-icons/bs';
 
 const SettingModal = lazy(() => import('../modal/setting-modal'));
 import QuickSwitcherModal from '../quick-switcher/quick-switcher-modal';
 import type { AppCommand } from '../quick-switcher/quick-switcher-modal';
-import { BsGear as BsGearCmd, BsLock, BsXCircle, BsBoxArrowUpRight, BsLayoutSidebarReverse, BsFolderSymlink, BsPrinter, BsStarFill } from 'react-icons/bs';
+import { BsGear as BsGearCmd, BsLock, BsXCircle, BsBoxArrowUpRight, BsLayoutSidebarReverse, BsFolderSymlink, BsPrinter, BsStarFill, BsPuzzle } from 'react-icons/bs';
 import { toast as reactToast } from 'react-toastify';
 import { Tooltip } from '../tooltip/tooltip';
 import { BINDERUS_WEB_URL } from '../../utils/constants';
@@ -28,6 +34,7 @@ import {
   enhanceEditor,
   extractParentPath,
   focusEditor,
+  isBinaryMediaFile,
   isWeb,
   sanitizeInternalLink,
   setFavouriteItem,
@@ -38,7 +45,10 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener';
 import { getPath } from '../../utils/tauri-utils';
 import { BsArrowBarRight, BsGear } from 'react-icons/bs';
 import { useAppStore } from '../../hooks/use-app-store';
+import { useShallow } from 'zustand/react/shallow';
 import { registerShortcuts, getShortcutDisplay } from '../../utils/keyboard-shortcuts';
+import { registerBuiltInPlugins, subscribeCommands, listPluginCommands } from '../../plugins';
+import PluginPanelsHost from '../plugin-panels-host/plugin-panels-host';
 
 const SIDEBAR_DEFAULT_W = 288; // 18rem (w-72)
 const SIDEBAR_MIN_W = 200;
@@ -55,7 +65,8 @@ export default ({}: PageProps) => {
   } = useAppContext();
 
   const lang = useAppStore((s) => s.lang);
-  const tabs = useAppStore((s) => s.tabs);
+  // useShallow on array/object selectors so unrelated store updates don't retrigger re-renders
+  const tabs = useAppStore(useShallow((s) => s.tabs));
   const activeTabPath = useAppStore((s) => s.activeTabPath);
   const openTab = useAppStore((s) => s.openTab);
   const closeTab = useAppStore((s) => s.closeTab);
@@ -64,11 +75,21 @@ export default ({}: PageProps) => {
   const markTabDirty = useAppStore((s) => s.markTabDirty);
   const renameTabAction = useAppStore((s) => s.renameTab);
 
-  const activeTab = useAppStore((s) => s.tabs.find((t) => t.file_path === s.activeTabPath));
+  // O(1) lookup via derived tabsById map — keeps the returned reference stable
+  // across unrelated tab mutations (e.g. typing in another tab), so this
+  // selector + the downstream memos don't thrash on every keystroke.
+  const activeTab = useAppStore((s) => (s.activeTabPath ? s.tabsById[s.activeTabPath] : undefined));
+
+  const [pluginCommands, setPluginCommands] = useState(() => listPluginCommands());
+  useEffect(() => {
+    setPluginCommands(listPluginCommands());
+    return subscribeCommands(() => setPluginCommands(listPluginCommands()));
+  }, []);
 
   const [newsModalOpened, setNewsModalOpened] = useState(false);
   const [feedbackModalOpened, setFeedbackModalOpened] = useState(false);
   const [settingModalOpened, setSettingModalOpened] = useState(false);
+  const [pluginsModalOpened, setPluginsModalOpened] = useState(false);
   const [quickSwitcherOpened, setQuickSwitcherOpened] = useState(false);
   const [modeTab, setModeTab] = useState(ModeTab.ALL);
   const [sidebarShowed, setSidebarShowed] = useState(true);
@@ -115,6 +136,14 @@ export default ({}: PageProps) => {
         if (el) { (el as HTMLInputElement).select(); (el as HTMLInputElement).focus(); }
       },
       toggleRawPanel: () => setRawPanelVisible((v) => !v),
+      toggleEditorMode: () => {
+        const { tabs, activeTabPath, setTabEditorMode } = useAppStore.getState();
+        if (!activeTabPath) return;
+        const tab = tabs.find((t) => t.file_path === activeTabPath);
+        if (!tab) return;
+        const next = (tab.editorMode ?? 'md') === 'md' ? 'md-text' : 'md';
+        setTabEditorMode(activeTabPath, next);
+      },
       lockApp: async () => { await lockDb(); setIsLocked(true); },
       closeActiveTab: () => {
         const { activeTabPath: path, closeTab: close } = useAppStore.getState();
@@ -150,6 +179,17 @@ export default ({}: PageProps) => {
     });
   }, [encryptionEnabled]);
 
+  useEffect(() => {
+    const handler = () => setRawPanelVisible((v) => !v);
+    window.addEventListener('toggle-raw-panel', handler);
+    return () => window.removeEventListener('toggle-raw-panel', handler);
+  }, []);
+
+  // Activate built-in plugins once on mount. Idempotent.
+  useEffect(() => {
+    registerBuiltInPlugins();
+  }, []);
+
   // Tauri menu events (macOS native menu items that bypass the WebView keydown)
   useEffect(() => {
     if (isWeb) return;
@@ -176,10 +216,14 @@ export default ({}: PageProps) => {
     try {
       const tab = useAppStore.getState().tabs.find((t) => t.file_path === filePath);
       if (!tab || tab.content === null || tab.content === undefined) return;
+      // Skip binary media tabs — they don't hold text content to compare.
+      if (isBinaryMediaFile(splitFilePath(filePath).fileName)) return;
 
+      // External-change detection must bypass cache; invalidate then re-read.
+      invalidateReadCache(filePath);
       const diskContent: string = isWeb
         ? (mockReadFile(filePath) ?? '')
-        : `${(await invoke('read_file', { filePath })) ?? ''}`;
+        : await readFileCached(filePath);
 
       // Re-check after async gap
       const freshTab = useAppStore.getState().tabs.find((t) => t.file_path === filePath);
@@ -218,9 +262,17 @@ export default ({}: PageProps) => {
   const loadTabContent = async (filePath: string) => {
     setIsLoading(true);
     try {
-      let content: any = isWeb ? mockReadFile(filePath) : await invoke('read_file', { filePath });
-      content = content ?? '';
-      updateTabContent(filePath, `${content}`);
+      // Media files (images, video, audio) render from their file_path via
+      // ImgPreview / VideoPlayer / AudioPlayer — they never consume tab
+      // content. Attempting a UTF-8 text read on binary bytes throws (and
+      // used to cascade into closeTab, wiping the sidebar folderStack).
+      const isBinary = isBinaryMediaFile(splitFilePath(filePath).fileName);
+      let content: string = '';
+      if (!isBinary) {
+        const raw = isWeb ? mockReadFile(filePath) : await readFileCached(filePath);
+        content = `${raw ?? ''}`;
+      }
+      updateTabContent(filePath, content);
 
       const file = tabs.find((t) => t.file_path === filePath) ?? { file_path: filePath, file_name: splitFilePath(filePath).fileName, file_text: '', is_file: true, is_dir: false };
       enhanceEditor({
@@ -231,7 +283,7 @@ export default ({}: PageProps) => {
           if (matchedItem) {
             onFileSelect(matchedItem);
           } else {
-            alert(`${t('ERR_INVALID_LINK')}: ${sanitizeInternalLink(e?.href)}`);
+            toastError(`${t('ERR_INVALID_LINK')}: ${sanitizeInternalLink(e?.href)}`);
           }
         }
       });
@@ -240,8 +292,13 @@ export default ({}: PageProps) => {
         focusEditor(true);
         setRecentList((list) => addItemtoRecentList(list, file as FileType));
       });
-    } catch {
-      closeTab(filePath);
+    } catch (err) {
+      // Leave the tab open with empty content rather than silently closing
+      // it — a closed tab hides the failure from the user and (for the only
+      // open tab) resets folderStack, which previously stranded the sidebar
+      // at root when clicking a problematic file.
+      console.error('loadTabContent failed:', err);
+      updateTabContent(filePath, '');
       setIsLoading(false);
     }
   };
@@ -269,7 +326,7 @@ export default ({}: PageProps) => {
           if (matchedItem) {
             onFileSelect(matchedItem);
           } else {
-            alert(`${t('ERR_INVALID_LINK')}: ${sanitizeInternalLink(e?.href)}`);
+            toastError(`${t('ERR_INVALID_LINK')}: ${sanitizeInternalLink(e?.href)}`);
           }
         }
       });
@@ -389,11 +446,20 @@ export default ({}: PageProps) => {
       onSelect: () => { const { tabs: allTabs, activeTabPath: atp, closeTab: ct } = useAppStore.getState(); allTabs.filter((tab) => tab.file_path !== atp).forEach((tab) => ct(tab.file_path)); } },
     { id: 'close-all-tabs', label: t('APP_CLOSE_ALL_TABS') || 'Close All Tabs', icon: <BsXCircle size={14} />,
       onSelect: () => { const { tabs: allTabs, closeTab: ct } = useAppStore.getState(); allTabs.forEach((tab) => ct(tab.file_path)); } },
+    { id: 'manage-plugins', label: t('PLUGINS_MANAGE_TITLE') || 'Manage Plugins', icon: <BsPuzzle size={14} />,
+      onSelect: () => setPluginsModalOpened(true) },
     { id: 'whats-new', label: t('APP_MAIN_WHATS_NEW') || "What's New", icon: <BsBoxArrowUpRight size={14} />,
       onSelect: () => setNewsModalOpened(true) },
     { id: 'feedback', label: t('APP_MAIN_FEEDBACK') || 'Feedback', icon: <BsBoxArrowUpRight size={14} />,
       onSelect: () => setFeedbackModalOpened(true) },
-  ], [encryptionEnabled]);
+    ...pluginCommands.map((c) => ({
+      id: c.scopedId,
+      label: c.desc.label,
+      icon: c.desc.icon ?? <BsPuzzle size={14} />,
+      shortcut: c.desc.shortcut,
+      onSelect: c.desc.onSelect,
+    })),
+  ], [encryptionEnabled, pluginCommands]);
 
   return (
     <div className="flex">
@@ -440,12 +506,16 @@ export default ({}: PageProps) => {
           </span>
           <Tooltip content={t('APP_MAIN_USER_GUIDE')}>
             <a href={getUserGuideUrl(lang)} target="_blank" rel="noopener" className="sidebar-footer-item">
-              <AiOutlineQuestionCircle size={16} />
+              <BsQuestionCircle size={16} />
             </a>
           </Tooltip>
         </div>
-        <NewsModal isOpen={newsModalOpened} onClose={() => setNewsModalOpened(false)} />
-        <FeedbackModal isOpen={feedbackModalOpened} onClose={() => setFeedbackModalOpened(false)} />
+        <Suspense fallback={null}><ConfirmDialog /></Suspense>
+        <Suspense fallback={null}><FolderPickerHost /></Suspense>
+        <Suspense fallback={null}><ImagePreviewOverlay /></Suspense>
+        {newsModalOpened && <Suspense fallback={null}><NewsModal isOpen={true} onClose={() => setNewsModalOpened(false)} /></Suspense>}
+        {feedbackModalOpened && <Suspense fallback={null}><FeedbackModal isOpen={true} onClose={() => setFeedbackModalOpened(false)} /></Suspense>}
+        {pluginsModalOpened && <Suspense fallback={null}><ManagePluginsModal isOpen={true} onClose={() => setPluginsModalOpened(false)} /></Suspense>}
         {settingModalOpened && (
           <Suspense fallback={null}>
             <SettingModal isOpen={true} onClose={() => setSettingModalOpened(false)} />
@@ -466,9 +536,10 @@ export default ({}: PageProps) => {
         content={activeTab?.content ?? null}
         filePath={activeTab?.file_path ?? null}
       />
+      <PluginPanelsHost />
 
       <div
-        className="flex flex-col h-screen overflow-x-hidden overflow-y-auto"
+        className="flex flex-col h-screen overflow-x-hidden"
         style={{
           marginLeft: sidebarShowed ? sidebarWidth : 0,
           width: sidebarShowed ? `calc(100% - ${sidebarWidth}px)` : '100%',
@@ -488,7 +559,7 @@ export default ({}: PageProps) => {
           <TabBar />
         </div>
         <AppEditorPanel
-          className="flex-1 min-h-0"
+          className="flex-1 min-h-0 overflow-y-auto"
           isLoading={isLoading}
           content={activeTab?.content ?? null}
           editorKey={rawSaveVersion}
@@ -510,6 +581,7 @@ export default ({}: PageProps) => {
           }}
           onFileSelect={onFileSelect}
         />
+        <StatusBar className="flex-shrink-0 mt-auto" />
       </div>
     </div>
   );

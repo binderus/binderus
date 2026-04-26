@@ -1,3 +1,11 @@
+/* @theme
+id: dark-gruvbox
+name: Gruvbox Dark
+variant: dark
+accent: "#fabd2f"
+description: Retro groove warm dark theme
+*/
+
 [data-theme="dark-gruvbox"] {
   --bg-primary: #282828;
   --bg-secondary: #3c3836;

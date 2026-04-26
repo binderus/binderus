@@ -1,10 +1,14 @@
 /**
- * Description: Theme registry for Binderus. Defines built-in theme metadata,
- *   provides helpers for theme lookup, and handles lazy-loading theme CSS with cleanup.
- * Requirements: Vite for dynamic CSS imports with ?inline suffix
+ * Description: Theme registry for Binderus. Discovers built-in themes from
+ *   src/themes/*.css at build time via Vite's import.meta.glob, parses their
+ *   /* @theme *​/ metadata block, and provides a single loader for both built-in
+ *   and custom themes.
+ * Requirements: Vite (import.meta.glob), parseThemeMeta from theme-loader.ts
  * Inputs: Theme ID string
- * Outputs: Theme metadata, isDarkTheme check, loadTheme function
+ * Outputs: Theme metadata, isDarkTheme check, loadTheme/registerThemes/unregisterTheme
  */
+
+import { parseThemeMeta, getCustomThemeCSS, sanitizeThemeCSS, mergeWithParent } from './theme-loader';
 
 export interface ThemeDefinition {
   id: string;
@@ -16,20 +20,62 @@ export interface ThemeDefinition {
   source: 'builtin' | 'custom' | 'gallery';
   filePath?: string;
   version?: string;
+  // Built-in theme id this custom theme inherits from. Restricted to built-ins in v1.
+  extends?: string;
+  // Reserved for v1.5 author-exposed knobs (Style-Settings-equivalent). v1 captures
+  // the raw `/* @settings ... */` block as opaque text so future versions can parse
+  // it without breaking themes authored against the v1 spec.
+  settingsBlock?: string;
 }
 
-export const BUILTIN_THEMES: ThemeDefinition[] = [
-  { id: 'dark-nord', name: 'Nord Dark', variant: 'dark', accentColor: '#88c0d0', source: 'builtin', description: 'Arctic, north-bluish palette' },
-  { id: 'light-white', name: 'Classic Light', variant: 'light', accentColor: '#2563eb', source: 'builtin', description: 'Clean, minimal light theme' },
-  { id: 'dark-dracula', name: 'Dracula', variant: 'dark', accentColor: '#bd93f9', source: 'builtin', description: 'Dark theme with vivid colors' },
-  { id: 'dark-one-dark', name: 'One Dark Pro', variant: 'dark', accentColor: '#61afef', source: 'builtin', description: 'Atom One Dark inspired' },
-  { id: 'dark-catppuccin', name: 'Catppuccin Mocha', variant: 'dark', accentColor: '#cba6f7', source: 'builtin', description: 'Soothing pastel dark theme' },
-  { id: 'light-catppuccin', name: 'Catppuccin Latte', variant: 'light', accentColor: '#8839ef', source: 'builtin', description: 'Warm pastel light theme' },
-  { id: 'dark-github', name: 'GitHub Dark', variant: 'dark', accentColor: '#58a6ff', source: 'builtin', description: 'GitHub\'s official dark theme' },
-  { id: 'dark-solarized', name: 'Solarized Dark', variant: 'dark', accentColor: '#268bd2', source: 'builtin', description: 'Scientifically designed color scheme' },
-  { id: 'dark-gruvbox', name: 'Gruvbox Dark', variant: 'dark', accentColor: '#fabd2f', source: 'builtin', description: 'Retro groove warm dark theme' },
-  { id: 'dark-tokyo-night', name: 'Tokyo Night', variant: 'dark', accentColor: '#7aa2f7', source: 'builtin', description: 'Inspired by Tokyo city lights' },
-];
+// Eager-load all built-in theme CSS at build time. Each file must start with a
+// /* @theme */ metadata block; missing blocks throw at module-init so CI catches it.
+//
+// IMPORTANT: use `?raw`, NOT `?inline`. `?inline` runs the file through Vite's CSS
+// pipeline which minifies and strips comments — the `/* @theme */` block disappears
+// in production builds, breaking parseThemeMeta. `?raw` returns the file byte-for-byte.
+const builtinModules = import.meta.glob('../../themes/*.css', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>;
+
+// Skip the shared variable-contract file — it has no metadata block.
+const builtinCSS: Record<string, string> = {};
+for (const [path, css] of Object.entries(builtinModules)) {
+  if (path.endsWith('/_variables.css')) continue;
+  builtinCSS[path] = css;
+}
+
+export const BUILTIN_THEMES: ThemeDefinition[] = Object.entries(builtinCSS).map(([path, css]) => {
+  const meta = parseThemeMeta(css);
+  if (!meta) {
+    throw new Error(`Built-in theme is missing or has malformed /* @theme */ metadata block: ${path}`);
+  }
+  return { ...meta, source: 'builtin' };
+});
+
+// id -> raw CSS string lookup, used by loadTheme() for built-ins.
+const builtinCSSById: Record<string, string> = {};
+for (const [path, css] of Object.entries(builtinCSS)) {
+  const meta = parseThemeMeta(css);
+  if (meta) builtinCSSById[meta.id] = css;
+}
+
+/**
+ * Look up raw CSS for any theme id (built-in or custom). Used by export/duplicate flows.
+ */
+export function getThemeSourceCSS(id: string): string | undefined {
+  return builtinCSSById[id] ?? getCustomThemeCSS(id);
+}
+
+/**
+ * Look up raw CSS for a built-in theme id only. Used by `extends:` merge —
+ * v1 restricts inheritance to built-in parents to avoid dependency chains.
+ */
+export function getBuiltinSourceCSS(id: string): string | undefined {
+  return builtinCSSById[id];
+}
 
 // Mutable registry — custom/gallery themes are merged in at runtime
 let registeredThemes: ThemeDefinition[] = [...BUILTIN_THEMES];
@@ -63,49 +109,61 @@ export function registerThemes(themes: ThemeDefinition[]): void {
   }
 }
 
+export function unregisterTheme(id: string): void {
+  const idx = registeredThemes.findIndex((r) => r.id === id);
+  if (idx < 0) return;
+  // Refuse to remove built-ins — they are bundled with the app.
+  if (registeredThemes[idx].source === 'builtin') return;
+  registeredThemes.splice(idx, 1);
+}
+
 // --- Theme CSS Loading ---
 
-// Map of theme id -> loaded CSS module (for built-in themes)
-const loadedCSS = new Map<string, string>();
-let currentThemeStyleEl: HTMLStyleElement | null = null;
-
-const themeImporters: Record<string, () => Promise<{ default: string }>> = {
-  'dark-nord': () => import('../../themes/dark-nord.css?inline'),
-  'light-white': () => import('../../themes/light-white.css?inline'),
-  'dark-dracula': () => import('../../themes/dark-dracula.css?inline'),
-  'dark-one-dark': () => import('../../themes/dark-one-dark.css?inline'),
-  'dark-catppuccin': () => import('../../themes/dark-catppuccin.css?inline'),
-  'light-catppuccin': () => import('../../themes/light-catppuccin.css?inline'),
-  'dark-github': () => import('../../themes/dark-github.css?inline'),
-  'dark-solarized': () => import('../../themes/dark-solarized.css?inline'),
-  'dark-gruvbox': () => import('../../themes/dark-gruvbox.css?inline'),
-  'dark-tokyo-night': () => import('../../themes/dark-tokyo-night.css?inline'),
-};
+const ACTIVE_STYLE_MARKER = 'data-binderus-active-theme';
 
 export async function loadTheme(themeId: string): Promise<void> {
-  // Remove previous built-in theme style to avoid CSS accumulation
-  currentThemeStyleEl?.remove();
-  currentThemeStyleEl = null;
-
-  // Also remove any custom theme style that might be active
-  document.querySelectorAll('style[data-theme-id]').forEach((el) => el.remove());
-
-  const importer = themeImporters[themeId];
-  if (importer) {
-    // Built-in theme: use cached or load
-    let css = loadedCSS.get(themeId);
-    if (!css) {
-      const module = await importer();
-      css = module.default;
-      loadedCSS.set(themeId, css);
+  // Resolve CSS: built-in first (un-sanitized, trusted), then custom (sanitized).
+  // Custom themes that declare `extends:` are merged with their built-in parent so
+  // a single injected block carries both rule sets (approach C from plan §4).
+  let css: string | undefined = builtinCSSById[themeId];
+  let trusted = true;
+  if (!css) {
+    const rawCustom = getCustomThemeCSS(themeId);
+    if (rawCustom) {
+      const merged = mergeWithParent(themeId, rawCustom, getBuiltinSourceCSS);
+      css = sanitizeThemeCSS(merged);
+      trusted = false;
     }
-    const style = document.createElement('style');
-    style.setAttribute('data-theme-id', themeId);
-    style.textContent = css;
-    document.head.appendChild(style);
-    currentThemeStyleEl = style;
   }
-  // For custom themes, CSS is injected by theme-loader.ts
+
+  // Defence in depth: drop any leftover `style[data-theme-id]` elements that aren't
+  // our managed active style. HMR, prior code paths, or stale custom-theme injections
+  // can leave these behind and they win the cascade by appending-last order.
+  document.querySelectorAll('style[data-theme-id]').forEach((el) => {
+    if (!el.hasAttribute(ACTIVE_STYLE_MARKER)) el.remove();
+  });
+
+  // Reuse a single <style> element across theme switches and mutate textContent —
+  // avoids CSSOM churn / brief flash of unstyled content. (Phase A.5.3)
+  // CRITICAL: re-append the element so it's last in <head> and wins the cascade
+  // against `_variables.css` (statically imported, has `:root` defaults) and
+  // anything else with equal-specificity selectors loaded earlier.
+  let active = document.head.querySelector<HTMLStyleElement>(`style[${ACTIVE_STYLE_MARKER}]`);
+  if (css) {
+    if (!active) {
+      active = document.createElement('style');
+      active.setAttribute(ACTIVE_STYLE_MARKER, '');
+    }
+    active.setAttribute('data-theme-id', themeId);
+    active.setAttribute('data-theme-trust', trusted ? 'builtin' : 'custom');
+    active.textContent = css;
+    // Always (re-)append last so cascade order is correct.
+    document.head.appendChild(active);
+  } else if (active) {
+    // Unknown theme id — clear the active style rather than leave stale CSS in place.
+    active.textContent = '';
+    active.setAttribute('data-theme-id', '');
+  }
 
   document.documentElement.setAttribute('data-theme', themeId);
 }

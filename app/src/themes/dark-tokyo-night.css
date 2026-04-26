@@ -1,3 +1,11 @@
+/* @theme
+id: dark-tokyo-night
+name: Tokyo Night
+variant: dark
+accent: "#7aa2f7"
+description: Inspired by Tokyo city lights
+*/
+
 [data-theme="dark-tokyo-night"] {
   --bg-primary: #1a1b26;
   --bg-secondary: #24283b;

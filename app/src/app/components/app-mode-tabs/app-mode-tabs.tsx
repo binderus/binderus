@@ -1,6 +1,5 @@
-import { AiOutlineSearch, AiOutlineStar } from 'react-icons/ai';
+import { BsSearch, BsStar, BsArrowBarLeft } from 'react-icons/bs';
 import { t } from '../../utils/base-utils';
-import { BsArrowBarLeft } from 'react-icons/bs';
 
 export const enum ModeTab {
   ALL = 'ALL',
@@ -46,13 +45,13 @@ export default ({ modeTab, onChange, onCollapse }: Props) => {
         className={`sidebar-tab sidebar-tab-icon ${modeTab === ModeTab.FAVORITES ? 'sidebar-tab-active' : ''}`}
         onClick={() => onChange(ModeTab.FAVORITES)}
       >
-        <AiOutlineStar size={15} />
+        <BsStar size={15} />
       </button>
       <button
         className={`sidebar-tab sidebar-tab-icon ${modeTab === ModeTab.SEARCH ? 'sidebar-tab-active' : ''}`}
         onClick={() => onChange(ModeTab.SEARCH)}
       >
-        <AiOutlineSearch size={15} />
+        <BsSearch size={15} />
       </button>
       <button className="sidebar-tab sidebar-collapse" onClick={onCollapse}>
         <BsArrowBarLeft size={15} />

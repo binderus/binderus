@@ -5,7 +5,7 @@
  */
 import { useRef, useState } from 'react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
-import { IoClose } from 'react-icons/io5';
+import { BsX } from 'react-icons/bs';
 import { useStoreWithEqualityFn } from 'zustand/traditional';
 import { useAppStore } from '../../hooks/use-app-store';
 import { t } from '../../utils/base-utils';
@@ -89,7 +89,7 @@ export default function TabBar() {
                             closeTab(tab.file_path);
                           }}
                         >
-                          <IoClose size={14} />
+                          <BsX size={14} />
                         </button>
                       </div>
                     )}

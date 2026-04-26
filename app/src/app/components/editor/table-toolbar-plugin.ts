@@ -18,16 +18,20 @@ import {
   deleteRow,
   deleteColumn,
 } from '@milkdown/prose/tables';
+import { t } from '../../utils/base-utils';
 
 type TableCmd = (state: any, dispatch?: any, view?: any) => boolean;
 
-const TOOLBAR_ACTIONS: { label: string; cmd: TableCmd; title: string }[] = [
-  { label: '+ Row ↑', title: 'Add row before', cmd: addRowBefore },
-  { label: '+ Row ↓', title: 'Add row after',  cmd: addRowAfter  },
-  { label: '− Row',   title: 'Delete row',      cmd: deleteRow    },
-  { label: '+ Col ←', title: 'Add column before', cmd: addColumnBefore },
-  { label: '+ Col →', title: 'Add column after',  cmd: addColumnAfter  },
-  { label: '− Col',   title: 'Delete column',      cmd: deleteColumn   },
+// Action keys are resolved via t() at toolbar-build time (inside view()) so the
+// current locale is picked up rather than whatever happened to be active at
+// module load. i18n keys live under TABLE_TOOLBAR_* in src/locales/*.json.
+const TOOLBAR_ACTIONS: { labelKey: string; titleKey: string; cmd: TableCmd }[] = [
+  { labelKey: 'TABLE_TOOLBAR_ADD_ROW_BEFORE_LABEL', titleKey: 'TABLE_TOOLBAR_ADD_ROW_BEFORE_TITLE', cmd: addRowBefore   },
+  { labelKey: 'TABLE_TOOLBAR_ADD_ROW_AFTER_LABEL',  titleKey: 'TABLE_TOOLBAR_ADD_ROW_AFTER_TITLE',  cmd: addRowAfter    },
+  { labelKey: 'TABLE_TOOLBAR_DELETE_ROW_LABEL',     titleKey: 'TABLE_TOOLBAR_DELETE_ROW_TITLE',     cmd: deleteRow      },
+  { labelKey: 'TABLE_TOOLBAR_ADD_COL_BEFORE_LABEL', titleKey: 'TABLE_TOOLBAR_ADD_COL_BEFORE_TITLE', cmd: addColumnBefore},
+  { labelKey: 'TABLE_TOOLBAR_ADD_COL_AFTER_LABEL',  titleKey: 'TABLE_TOOLBAR_ADD_COL_AFTER_TITLE',  cmd: addColumnAfter },
+  { labelKey: 'TABLE_TOOLBAR_DELETE_COL_LABEL',     titleKey: 'TABLE_TOOLBAR_DELETE_COL_TITLE',     cmd: deleteColumn   },
 ];
 
 export const tableToolbarPlugin = $prose(() => new Plugin({
@@ -36,11 +40,11 @@ export const tableToolbarPlugin = $prose(() => new Plugin({
     const toolbar = document.createElement('div');
     toolbar.className = 'table-toolbar';
 
-    TOOLBAR_ACTIONS.forEach(({ label, title, cmd }) => {
+    TOOLBAR_ACTIONS.forEach(({ labelKey, titleKey, cmd }) => {
       const btn = document.createElement('button');
       btn.className = 'table-toolbar-btn';
-      btn.textContent = label;
-      btn.title = title;
+      btn.textContent = t(labelKey);
+      btn.title = t(titleKey);
       btn.type = 'button';
       btn.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep editor focus
@@ -72,9 +76,9 @@ export const tableToolbarPlugin = $prose(() => new Plugin({
         const containerRect = container.getBoundingClientRect();
 
         toolbar.style.display = 'flex';
-        // Position just above the table, aligned to its left edge
-        toolbar.style.top  = `${tableRect.top  - containerRect.top  - toolbar.offsetHeight - 4}px`;
-        toolbar.style.left = `${tableRect.left - containerRect.left}px`;
+        // Position just above the table, aligned to its right edge
+        toolbar.style.top  = `${tableRect.top - containerRect.top - toolbar.offsetHeight - 4}px`;
+        toolbar.style.left = `${tableRect.right - containerRect.left - toolbar.offsetWidth}px`;
       },
       destroy() {
         toolbar.remove();

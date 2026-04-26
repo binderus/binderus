@@ -1,0 +1,8 @@
+{
+  "id": "ai-chat",
+  "name": "AI Chat",
+  "version": "0.2.8",
+  "minAppVersion": "0.7.8",
+  "description": "Chat with any OpenAI-compatible LLM (Ollama, LM Studio, OpenAI, DeepInfra, Groq, Together, OpenRouter). Uses editor, selection, files, or a folder as context.",
+  "author": "Binderus"
+}

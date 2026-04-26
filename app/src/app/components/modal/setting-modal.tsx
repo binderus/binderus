@@ -1,7 +1,8 @@
 import { Dialog, DialogPanel, DialogTitle, Transition } from '@headlessui/react';
 import { invoke } from '@tauri-apps/api/core';
 import { revealItemInDir } from '@tauri-apps/plugin-opener';
-import { open as dialogOpen, ask } from '@tauri-apps/plugin-dialog';
+import { open as dialogOpen } from '@tauri-apps/plugin-dialog';
+import { showConfirm } from '../confirm-dialog/confirm-dialog';
 import { getDocumentDir, getStorageInfo, migrateToDb, quitApp, StorageInfo, readGlobalSettings, writeGlobalSettings, readVaultSettings, writeVaultSettings, getVaultPath, setVaultPath, initVault, createExampleNote } from '../../utils/tauri-utils';
 import { open as shellOpen } from '@tauri-apps/plugin-shell';
 import { Fragment, useEffect, useState } from 'react';
@@ -9,7 +10,8 @@ import { FiExternalLink, FiChevronDown, FiChevronRight } from 'react-icons/fi';
 // import { PuffLoader } from 'react-spinners';
 import { useAppContext } from '../../hooks/use-app-context';
 import { Theme } from '../../types';
-import { getAllThemes } from '../../utils/theme-registry';
+import { getAllThemes, registerThemes, unregisterTheme, getTheme, getThemeSourceCSS } from '../../utils/theme-registry';
+import { discoverCustomThemes, openThemesFolder, buildStarterFromTheme, saveStarterToDisk, revealThemeFile, applyAccentOverride, hexToHsl, hslToHex, installThemeFromFile, uninstallThemeFile, applyCodeThemeOverride, extractPrismColors } from '../../utils/theme-loader';
 import {
   fontNames,
   getOS,
@@ -71,6 +73,58 @@ export default function SettingModal({ isOpen, onClose }: Props) {
   const closeAllTabs = useAppStore((s) => s.closeAllTabs);
   const [docDir, setDocDir] = useState(dataDir);
   const [errorMsg, setErrorMsg] = useState('');
+  // Tick state used to force re-render after custom-theme registry mutations
+  // (the registry holds module-level state; React doesn't observe it directly).
+  const [, setRefreshTick] = useState(0);
+
+  // Accent override — `null` means "follow theme's own accent"; otherwise HSL components.
+  const [accentOverride, setAccentOverride] = useState<{ h: number; s: number; l: number } | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const json: any = await readVaultSettings();
+        const ov = json?.accentOverride;
+        if (ov && typeof ov.h === 'number') setAccentOverride({ h: ov.h, s: ov.s, l: ov.l });
+      } catch { /* best-effort */ }
+    })();
+  }, []);
+
+  const persistAccent = async (next: { h: number; s: number; l: number } | null) => {
+    setAccentOverride(next);
+    applyAccentOverride(next);
+    try {
+      const json: any = await readVaultSettings();
+      if (next) json.accentOverride = next; else delete json.accentOverride;
+      await writeVaultSettings(json);
+    } catch { /* best-effort */ }
+  };
+
+  // Code-block theme override — null/'' means "follow active UI theme".
+  const [codeTheme, setCodeTheme] = useState<string>('');
+  useEffect(() => {
+    (async () => {
+      try {
+        const json: any = await readVaultSettings();
+        if (typeof json?.codeTheme === 'string') setCodeTheme(json.codeTheme);
+      } catch { /* best-effort */ }
+    })();
+  }, []);
+
+  const persistCodeTheme = async (nextId: string) => {
+    setCodeTheme(nextId);
+    if (!nextId) {
+      applyCodeThemeOverride(null);
+    } else {
+      const css = getThemeSourceCSS(nextId);
+      const colors = css ? extractPrismColors(css) : null;
+      applyCodeThemeOverride(colors);
+    }
+    try {
+      const json: any = await readVaultSettings();
+      if (nextId) json.codeTheme = nextId; else delete json.codeTheme;
+      await writeVaultSettings(json);
+    } catch { /* best-effort */ }
+  };
   const [successMsg, setSuccessMsg] = useState('');
   const [storageInfo, setStorageInfo] = useState<StorageInfo | null>(null);
   
@@ -79,6 +133,7 @@ export default function SettingModal({ isOpen, onClose }: Props) {
   const [isRequesting, setIsRequesting] = useState(false);
 
   const [tab, setTab] = useState(Tab.General);
+  const [shortcutSearch, setShortcutSearch] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [migrationState, setMigrationState] = useState<'idle' | 'db_exists' | 'enter_passphrase' | 'confirm' | 'migrating' | 'done' | 'restart_required'>('idle');
   const [shaking, setShaking] = useState(false);
@@ -284,10 +339,11 @@ export default function SettingModal({ isOpen, onClose }: Props) {
         multiple: false,
       });
       if (!targetDir) return;
-      const confirmed = await ask(
-        `This will export all files and directories to:\n${targetDir}\n\nExisting files will be overwritten. Continue?`,
-        { title: 'Confirm Export', kind: 'warning' }
-      );
+      const confirmed = await showConfirm({
+        title: t('STORAGE_EXPORT_CONFIRM_TITLE'),
+        message: t('STORAGE_EXPORT_CONFIRM_BODY', { dir: targetDir }),
+        danger: true,
+      });
       if (!confirmed) return;
       setIsExportingDb(true);
       const stats: { files_exported: number; dirs_exported: number } = await invoke('export_db_to_fs', { targetDir: targetDir });
@@ -490,18 +546,267 @@ export default function SettingModal({ isOpen, onClose }: Props) {
 
                       <div className="dialog-field">
                         <div className="dialog-label">{t('TEXT_THEME')}</div>
-                        <select className="dialog-select" style={{ width: '50%' }} value={theme} onChange={themeChanged}>
+                        <select className="dialog-select" style={{ width: '100%' }} value={theme} onChange={themeChanged}>
                           <optgroup label={t('TEXT_THEME_DARK')}>
-                            {getAllThemes().filter((t) => t.variant === 'dark').map((t) => (
+                            {getAllThemes().filter((t) => t.variant === 'dark' && t.source === 'builtin').map((t) => (
                               <option key={t.id} value={t.id}>{t.name}</option>
                             ))}
                           </optgroup>
                           <optgroup label={t('TEXT_THEME_LIGHT')}>
-                            {getAllThemes().filter((t) => t.variant === 'light').map((t) => (
+                            {getAllThemes().filter((t) => t.variant === 'light' && t.source === 'builtin').map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </optgroup>
+                          {getAllThemes().some((t) => t.source === 'custom') && (
+                            <optgroup label={t('TEXT_THEME_CUSTOM')}>
+                              {getAllThemes().filter((t) => t.source === 'custom').map((t) => (
+                                <option key={t.id} value={t.id}>{t.name}</option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+
+                        {/* Theme management — text-link toolbar. Two grouped rows, bullet-separated. */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 10, rowGap: 4, marginTop: 10, fontSize: 13 }}>
+                          <span style={{ fontSize: 11, opacity: 0.55, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4, minWidth: 56 }}>
+                            {t('TEXT_THEMES_LIBRARY')}
+                          </span>
+                          <button type="button" className="link-btn" onClick={openThemesFolder}>
+                            {t('TEXT_OPEN_THEMES_FOLDER')}
+                          </button>
+                          <span style={{ opacity: 0.3 }}>·</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={async () => {
+                              const before = getAllThemes().filter((t) => t.source === 'custom').map((t) => t.id);
+                              for (const id of before) unregisterTheme(id);
+                              const found = await discoverCustomThemes();
+                              if (found.length > 0) registerThemes(found);
+                              setRefreshTick((n) => n + 1);
+                              toastSuccess(t('TEXT_THEMES_REFRESHED').replace('{count}', String(found.length)));
+                            }}
+                          >
+                            {t('TEXT_REFRESH')}
+                          </button>
+                          <span style={{ opacity: 0.3 }}>·</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={async () => {
+                              const picked = await dialogOpen({
+                                multiple: false,
+                                directory: false,
+                                filters: [{ name: 'CSS', extensions: ['css'] }],
+                              });
+                              if (!picked || typeof picked !== 'string') return;
+                              let result = await installThemeFromFile({ sourcePath: picked, overwriteIfExists: false });
+                              if (!result.ok && result.reason === 'exists') {
+                                const ok = await showConfirm({ message: t('TEXT_INSTALL_OVERWRITE_CONFIRM') });
+                                if (!ok) return;
+                                result = await installThemeFromFile({ sourcePath: picked, overwriteIfExists: true });
+                              }
+                              if (!result.ok) {
+                                const reason = result.reason === 'no_metadata' ? t('TEXT_INSTALL_ERR_METADATA')
+                                  : result.reason === 'bad_id' ? t('TEXT_INSTALL_ERR_ID')
+                                  : result.reason === 'too_large' ? t('TEXT_INSTALL_ERR_SIZE')
+                                  : t('TEXT_INSTALL_ERR_GENERIC');
+                                toastError(reason);
+                                return;
+                              }
+                              const before = getAllThemes().filter((x) => x.source === 'custom').map((x) => x.id);
+                              for (const id of before) unregisterTheme(id);
+                              const found = await discoverCustomThemes();
+                              if (found.length > 0) registerThemes(found);
+                              setRefreshTick((n) => n + 1);
+                              toastSuccess(t('TEXT_INSTALL_OK').replace('{name}', result.id));
+                            }}
+                          >
+                            {t('TEXT_INSTALL_FROM_FILE')}
+                          </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 10, rowGap: 4, marginTop: 4, fontSize: 13 }}>
+                          <span style={{ fontSize: 11, opacity: 0.55, textTransform: 'uppercase', letterSpacing: 0.5, marginRight: 4, minWidth: 56 }}>
+                            {t('TEXT_THEMES_ACTIVE')}
+                          </span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            onClick={async () => {
+                              const def = getTheme(theme);
+                              const css = getThemeSourceCSS(theme);
+                              if (!def || !css) { toastError(t('TEXT_EXPORT_FAILED')); return; }
+                              const newId = `${def.id}-copy`;
+                              const newName = `${def.name} (Copy)`;
+                              const content = buildStarterFromTheme({
+                                sourceCSS: css,
+                                oldId: def.id,
+                                oldName: def.name,
+                                newId,
+                                newName,
+                                variant: def.variant,
+                                accent: def.accentColor,
+                                appVersion: VERSION,
+                              });
+                              const saved = await saveStarterToDisk(newId, content);
+                              if (!saved) return;
+                              const before = getAllThemes().filter((x) => x.source === 'custom').map((x) => x.id);
+                              for (const id of before) unregisterTheme(id);
+                              const found = await discoverCustomThemes();
+                              if (found.length > 0) registerThemes(found);
+                              setRefreshTick((n) => n + 1);
+                              toastSuccess(t('TEXT_EXPORT_SAVED').replace('{path}', saved));
+                            }}
+                          >
+                            {t('TEXT_EXPORT_AS_STARTER')}
+                          </button>
+                          <span style={{ opacity: 0.3 }}>·</span>
+                          <button
+                            type="button"
+                            className="link-btn"
+                            disabled={!getTheme(theme)?.filePath}
+                            onClick={async () => {
+                              const def = getTheme(theme);
+                              if (!def?.filePath) return;
+                              await revealThemeFile(def.filePath);
+                            }}
+                          >
+                            {t('TEXT_REVEAL_IN_FINDER')}
+                          </button>
+                          <span style={{ opacity: 0.3 }}>·</span>
+                          <button
+                            type="button"
+                            className="link-btn link-btn-danger"
+                            disabled={!getTheme(theme)?.filePath}
+                            onClick={async () => {
+                              const def = getTheme(theme);
+                              if (!def?.filePath) return;
+                              const ok = await showConfirm({
+                                message: t('TEXT_UNINSTALL_CONFIRM').replace('{name}', def.name),
+                                danger: true,
+                              });
+                              if (!ok) return;
+                              const removed = await uninstallThemeFile(def.filePath);
+                              if (!removed) { toastError(t('TEXT_UNINSTALL_FAILED')); return; }
+                              unregisterTheme(def.id);
+                              const fallback = def.variant === 'light' ? Theme.LightWhite : Theme.DarkNord;
+                              setTheme(fallback);
+                              const json: any = await readVaultSettings();
+                              json.theme = fallback;
+                              await writeVaultSettings(json);
+                              setRefreshTick((n) => n + 1);
+                              toastSuccess(t('TEXT_UNINSTALL_OK').replace('{name}', def.name));
+                            }}
+                          >
+                            {t('TEXT_UNINSTALL_THEME')}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="dialog-field">
+                        <div className="dialog-label">{t('TEXT_ACCENT_COLOR')}</div>
+                        {(() => {
+                          const activeAccent = getTheme(theme)?.accentColor || '#88c0d0';
+                          const currentHex = accentOverride
+                            ? hslToHex(accentOverride.h, accentOverride.s, accentOverride.l)
+                            : activeAccent;
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+                                <input
+                                  type="color"
+                                  style={{
+                                    width: 32, height: 32, padding: 0,
+                                    border: '1px solid var(--border-primary)', borderRadius: 6,
+                                    background: 'transparent', cursor: 'pointer', flex: '0 0 auto'
+                                  }}
+                                  value={currentHex}
+                                  onChange={(e) => {
+                                    const hsl = hexToHsl(e.target.value);
+                                    if (hsl) persistAccent(hsl);
+                                  }}
+                                  title={t('TEXT_ACCENT_COLOR')}
+                                />
+                                <input
+                                  type="text"
+                                  className="dialog-input"
+                                  style={{ width: 110, fontFamily: 'monospace', flex: '0 0 auto' }}
+                                  placeholder={activeAccent}
+                                  value={accentOverride ? currentHex : ''}
+                                  onChange={(e) => {
+                                    const hsl = hexToHsl(e.target.value);
+                                    if (hsl) persistAccent(hsl);
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  className="dialog-btn"
+                                  style={{ whiteSpace: 'nowrap', flex: '0 0 auto' }}
+                                  onClick={() => persistAccent(null)}
+                                  disabled={!accentOverride}
+                                >
+                                  {t('TEXT_ACCENT_RESET')}
+                                </button>
+                                <span style={{ fontSize: 12, opacity: 0.6, marginLeft: 4 }}>
+                                  {accentOverride ? t('TEXT_ACCENT_OVERRIDDEN') : t('TEXT_ACCENT_FROM_THEME')}
+                                </span>
+                              </div>
+                              {accentOverride && (
+                                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 36px', columnGap: 10, rowGap: 6, alignItems: 'center', maxWidth: 360 }}>
+                                  <span style={{ fontSize: 12, opacity: 0.7, textAlign: 'right' }}>{t('TEXT_HUE')}</span>
+                                  <input
+                                    type="range" min={0} max={360} value={accentOverride.h}
+                                    onChange={(e) => persistAccent({ ...accentOverride, h: parseInt(e.target.value, 10) })}
+                                    style={{ width: '100%' }}
+                                  />
+                                  <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>{accentOverride.h}°</span>
+
+                                  <span style={{ fontSize: 12, opacity: 0.7, textAlign: 'right' }}>{t('TEXT_SATURATION')}</span>
+                                  <input
+                                    type="range" min={0} max={100} value={accentOverride.s}
+                                    onChange={(e) => persistAccent({ ...accentOverride, s: parseInt(e.target.value, 10) })}
+                                    style={{ width: '100%' }}
+                                  />
+                                  <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>{accentOverride.s}%</span>
+
+                                  <span style={{ fontSize: 12, opacity: 0.7, textAlign: 'right' }}>{t('TEXT_LIGHTNESS')}</span>
+                                  <input
+                                    type="range" min={0} max={100} value={accentOverride.l}
+                                    onChange={(e) => persistAccent({ ...accentOverride, l: parseInt(e.target.value, 10) })}
+                                    style={{ width: '100%' }}
+                                  />
+                                  <span style={{ fontSize: 12, fontVariantNumeric: 'tabular-nums', opacity: 0.85 }}>{accentOverride.l}%</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      <div className="dialog-field">
+                        <div className="dialog-label">{t('TEXT_CODE_THEME')}</div>
+                        <select
+                          className="dialog-select"
+                          style={{ width: '100%' }}
+                          value={codeTheme}
+                          onChange={(e) => persistCodeTheme(e.target.value)}
+                        >
+                          <option value="">{t('TEXT_CODE_THEME_AUTO')}</option>
+                          <optgroup label={t('TEXT_THEME_DARK')}>
+                            {getAllThemes().filter((t) => t.variant === 'dark' && t.source === 'builtin').map((t) => (
+                              <option key={t.id} value={t.id}>{t.name}</option>
+                            ))}
+                          </optgroup>
+                          <optgroup label={t('TEXT_THEME_LIGHT')}>
+                            {getAllThemes().filter((t) => t.variant === 'light' && t.source === 'builtin').map((t) => (
                               <option key={t.id} value={t.id}>{t.name}</option>
                             ))}
                           </optgroup>
                         </select>
+                        <div style={{ fontSize: 12, opacity: 0.6, marginTop: 4 }}>
+                          {t('TEXT_CODE_THEME_HINT')}
+                        </div>
                       </div>
 
                       <div className="dialog-field">
@@ -654,7 +959,7 @@ export default function SettingModal({ isOpen, onClose }: Props) {
                             </div>
                           )}
 
-                          {isAlreadyDb && (
+                          {isAlreadyDb && selectedBackend === 'libsql' && (
                             <div className="dialog-field">
                               <p className="text-xs opacity-50">DB: {getVaultPath() + '/.binderus/binderus.db'}</p>
                             </div>
@@ -714,8 +1019,8 @@ export default function SettingModal({ isOpen, onClose }: Props) {
                           <p className="text-sm">{t('STORAGE_MIGRATE_CONFIRM')}</p>
                           {passphrase && <p className="text-xs opacity-50">{t('STORAGE_MIGRATE_ENCRYPTED_NOTE')}</p>}
                           <div className="flex gap-2">
-                            <button className="dialog-btn" onClick={startMigration}>{t('TEXT_CONFIRM')}</button>
-                            <button className="dialog-btn" onClick={() => setMigrationState('idle')}>{t('TEXT_CANCEL')}</button>
+                            <button className="dialog-btn" onClick={startMigration}>{t('TEXT_YES')}</button>
+                            <button className="dialog-btn" onClick={() => setMigrationState('idle')}>{t('TEXT_NO')}</button>
                           </div>
                         </div>
                       )}
@@ -751,41 +1056,62 @@ export default function SettingModal({ isOpen, onClose }: Props) {
                     </section>
                   )}
 
-                  {tab === Tab.Shortcuts && (
-                    <section className="dialog-section" style={{ maxHeight: 400, overflowY: 'auto' }}>
-                      <div className="dialog-field">
-                        <div className="dialog-label" style={{ fontSize: '0.875rem' }}>{t('SETTING_SHORTCUTS_APP')}</div>
-                        {SHORTCUTS.map((s) => (
-                          <div className="dialog-shortcut-row" key={s.id}>
-                            <span className="dialog-kbd">{cmdKeyName === 'Cmd' ? s.mac : s.win}</span>
-                            <span>{t(s.labelKey)}</span>
-                          </div>
-                        ))}
-
-                        <div className="dialog-label mt-4" style={{ fontSize: '0.875rem' }}>{t('SETTING_SHORTCUTS_EDITOR')}</div>
-                        <div className="dialog-shortcut-row">
-                          <span className="dialog-kbd">Shift Enter</span>
-                          <span>{t('SHORTCUT_BREAK_LINE')}</span>
+                  {tab === Tab.Shortcuts && (() => {
+                    const editorShortcuts = [
+                      { key: 'Shift Enter', labelKey: 'SHORTCUT_BREAK_LINE' },
+                      { key: `${cmdKeyName} [`, labelKey: 'SHORTCUT_LIST_UP' },
+                      { key: `${cmdKeyName} ]`, labelKey: 'SHORTCUT_LIST_DOWN' },
+                      { key: `${cmdKeyName} Alt 0-6`, labelKey: 'SHORTCUT_HEADINGS' },
+                      { key: `${cmdKeyName} Alt C`, labelKey: 'SHORTCUT_CODE_FENCE' },
+                    ];
+                    const q = shortcutSearch.toLowerCase();
+                    const matchApp = SHORTCUTS.filter((s) =>
+                      !q || t(s.labelKey).toLowerCase().includes(q) || s.mac.toLowerCase().includes(q) || s.win.toLowerCase().includes(q)
+                    );
+                    const matchEditor = editorShortcuts.filter((s) =>
+                      !q || t(s.labelKey).toLowerCase().includes(q) || s.key.toLowerCase().includes(q)
+                    );
+                    return (
+                      <section className="dialog-section">
+                        <input
+                          type="text"
+                          className="dialog-input"
+                          placeholder="Search shortcuts…"
+                          value={shortcutSearch}
+                          onChange={(e) => setShortcutSearch(e.target.value)}
+                          style={{ marginBottom: '0.75rem' }}
+                          autoFocus={false}
+                        />
+                        <div className="dialog-field" style={{ maxHeight: 360, overflowY: 'auto' }}>
+                          {matchApp.length > 0 && (
+                            <>
+                              <div className="dialog-label" style={{ fontSize: '0.875rem' }}>{t('SETTING_SHORTCUTS_APP')}</div>
+                              {matchApp.map((s) => (
+                                <div className="dialog-shortcut-row" key={s.id}>
+                                  <span className="dialog-kbd">{cmdKeyName === 'Cmd' ? s.mac : s.win}</span>
+                                  <span>{t(s.labelKey)}</span>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                          {matchEditor.length > 0 && (
+                            <>
+                              <div className="dialog-label mt-4" style={{ fontSize: '0.875rem' }}>{t('SETTING_SHORTCUTS_EDITOR')}</div>
+                              {matchEditor.map((s) => (
+                                <div className="dialog-shortcut-row" key={s.key}>
+                                  <span className="dialog-kbd">{s.key}</span>
+                                  <span>{t(s.labelKey)}</span>
+                                </div>
+                              ))}
+                            </>
+                          )}
+                          {matchApp.length === 0 && matchEditor.length === 0 && (
+                            <div style={{ fontSize: '0.8125rem', opacity: 0.5, padding: '8px 0' }}>No shortcuts match.</div>
+                          )}
                         </div>
-                        <div className="dialog-shortcut-row">
-                          <span className="dialog-kbd">{cmdKeyName} [</span>
-                          <span>{t('SHORTCUT_LIST_UP')}</span>
-                        </div>
-                        <div className="dialog-shortcut-row">
-                          <span className="dialog-kbd">{cmdKeyName} ]</span>
-                          <span>{t('SHORTCUT_LIST_DOWN')}</span>
-                        </div>
-                        <div className="dialog-shortcut-row">
-                          <span className="dialog-kbd">{cmdKeyName} Alt 0-6</span>
-                          <span>{t('SHORTCUT_HEADINGS')}</span>
-                        </div>
-                        <div className="dialog-shortcut-row">
-                          <span className="dialog-kbd">{cmdKeyName} Alt C</span>
-                          <span>{t('SHORTCUT_CODE_FENCE')}</span>
-                        </div>
-                      </div>
-                    </section>
-                  )}
+                      </section>
+                    );
+                  })()}
                 </div>
 
                 <div className="mt-5">

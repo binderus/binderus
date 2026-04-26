@@ -8,8 +8,10 @@ import { useAppContext } from './app/hooks/use-app-context';
 // import MainPage from './app/pages/main-page';
 import TestPage from './app/pages/test-page';
 import { DEFAULT_LANG, DEFAULT_THEME } from './app/utils/constants';
-import { initApp, getStartupError, getLockStatus, resetToFilesystem, quitApp, readVaultSettings, writeVaultSettings, getVaultPath, flushAllPendingWrites } from './app/utils/tauri-utils';
-import { isDarkTheme } from './app/utils/theme-registry';
+import { initApp, getStartupError, getLockStatus, resetToFilesystem, quitApp, readVaultSettings, writeVaultSettings, getVaultPath, flushAllPendingWrites, readGlobalSettings, writeGlobalSettings } from './app/utils/tauri-utils';
+import { isDarkTheme, registerThemes } from './app/utils/theme-registry';
+import { discoverCustomThemes, applyAccentOverride, applyCodeThemeOverride, extractPrismColors } from './app/utils/theme-loader';
+import { getThemeSourceCSS } from './app/utils/theme-registry';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen } from '@tauri-apps/api/event';
 import { debounce, getUserLocale, initI18n, isWeb, matchSupportedLocale, t } from './app/utils/base-utils';
@@ -30,6 +32,7 @@ function App() {
     setRecentList,
     setTheme,
     setSettingEmail,
+    setClientUuid,
     setEditorFont,
     theme,
     lang,
@@ -49,7 +52,7 @@ function App() {
   const init = async () => {
     if (isWeb) {
       // Dev/web mode: skip Tauri init, use defaults
-      initI18n(getUserLocale() || DEFAULT_LANG);
+      await initI18n(getUserLocale() || DEFAULT_LANG);
       setTheme(DEFAULT_THEME);
       setDataDir('Binderus');
       setLang(DEFAULT_LANG);
@@ -57,12 +60,15 @@ function App() {
       return;
     }
 
-    // Parallelize independent startup IPC calls — initApp (FS ops), getStartupError
-    // and getLockStatus (Rust backend queries) don't depend on each other.
-    const [settingJson, startupErr, lockStatus] = await Promise.all([
+    // Parallelize independent startup IPC calls — initApp (FS ops), getStartupError,
+    // getLockStatus, and readGlobalSettings (client UUID lookup) don't depend on each
+    // other. Rolling readGlobalSettings into the same Promise.all shaves ~one IPC
+    // round-trip off cold boot (~50-150 ms depending on backend).
+    const [settingJson, startupErr, lockStatus, globalJson] = await Promise.all([
       initApp(),
       getStartupError(),
-      getLockStatus()
+      getLockStatus(),
+      readGlobalSettings()
     ]);
 
     // Normalize stored lang (e.g. legacy 'ja-JP' → 'ja'), or auto-detect from OS.
@@ -73,10 +79,47 @@ function App() {
     setFavourites(settingJson.favourites ?? []);
     setRecentList(settingJson.recent ?? []);
 
+    // Discover user-installed custom themes from $APPDATA/themes/ and merge into the
+    // registry BEFORE setTheme() so the picker has the full list on first render and
+    // a saved custom-theme id resolves correctly.
+    try {
+      const customThemes = await discoverCustomThemes();
+      if (customThemes.length > 0) registerThemes(customThemes);
+    } catch {
+      // Discovery is best-effort; failures must not block startup.
+    }
+
     setTheme(settingJson?.theme ?? DEFAULT_THEME);
+
+    // Re-apply any persisted accent-color override so it survives across launches.
+    const ov = settingJson?.accentOverride;
+    if (ov && typeof ov.h === 'number' && typeof ov.s === 'number' && typeof ov.l === 'number') {
+      applyAccentOverride(ov);
+    }
+
+    // Re-apply any persisted code-theme override (Phase F2).
+    const codeThemeId: string | undefined = settingJson?.codeTheme;
+    if (codeThemeId) {
+      const css = getThemeSourceCSS(codeThemeId);
+      if (css) {
+        const colors = extractPrismColors(css);
+        if (colors) applyCodeThemeOverride(colors);
+      }
+    }
     setEditorFont(settingJson?.editor?.font ?? '');
     setLang(currentLang);
     setSettingEmail(settingJson?.settingEmail ?? '');
+
+    // Generate and persist a client UUID in global config (once per installation, across all vaults).
+    // Migrate from per-vault clientUuid if present (legacy), then clear it from vault settings.
+    const globalConfig: any = globalJson ?? {};
+    let uuid = globalConfig?.clientUuid ?? '';
+    if (!uuid) {
+      uuid = settingJson?.clientUuid || crypto.randomUUID();
+      globalConfig.clientUuid = uuid;
+      await writeGlobalSettings(globalConfig);
+    }
+    setClientUuid(uuid);
 
     if (startupErr === 'db_file_missing') {
       setDbMissing(true);
@@ -113,10 +156,20 @@ function App() {
     setSettingJson(settingJson);
     setInitDone(true);
   };
-  const initDebounced = debounce(
-    () => init().catch((e) => console.error('App init failed:', e)),
-    100
-  );
+  // HMR coalesce: in dev, init() can fire multiple times on fast-refresh; 100ms debounce
+  // dedupes. In production there's only one mount ever, so the debounce just adds 100ms
+  // of dead time to cold boot. Gate on import.meta.env.DEV.
+  const initDebounced = import.meta.env.DEV
+    ? debounce(() => init().catch((e) => console.error('App init failed:', e)), 100)
+    : () => { init().catch((e) => console.error('App init failed:', e)); };
+
+  // Remove zero-JS boot splash once React has mounted the real tree.
+  // Runs once on mount; splash is an absolutely-positioned overlay so this is a no-op
+  // for layout, just fades it out of the DOM.
+  useEffect(() => {
+    const splash = document.getElementById('boot-splash');
+    if (splash) splash.remove();
+  }, []);
 
   useEffect(() => {
     initDebounced();
@@ -151,8 +204,7 @@ function App() {
 
   useEffect(() => {
     if (lang) {
-      initI18n(lang);
-      setI18nVersion((n) => n + 1);
+      initI18n(lang).then(() => setI18nVersion((n) => n + 1));
     }
   }, [lang]);
 

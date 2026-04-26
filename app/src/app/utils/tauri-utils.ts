@@ -24,7 +24,23 @@ export type ReadDirResponse = {
 /** Current vault path (absolute). Set during init from storage info. */
 let _vaultPath = '';
 export const getVaultPath = () => _vaultPath;
-export const setVaultPath = (p: string) => { _vaultPath = p; };
+export const setVaultPath = (p: string) => {
+  // On vault switch, nuke both caches — stale listings from the previous vault
+  // are hazardous when paths collide (common vault names like "Notes").
+  if (_vaultPath && _vaultPath !== p) {
+    clearReadCache();
+    clearDirCache();
+  }
+  _vaultPath = p;
+  // Keep the Zustand store in sync so components and plugin-loader
+  // see the value via useAppStore. The store import would create a
+  // cycle with use-app-store → tauri-utils, so defer the import.
+  import('../hooks/use-app-store').then(({ useAppStore }) => {
+    if (useAppStore.getState().vaultPath !== p) {
+      useAppStore.getState().setVaultPath(p);
+    }
+  });
+};
 
 export const getPath = async (subPath = '', fullPath = true) => {
   if (fullPath === false) {
@@ -49,6 +65,8 @@ export const createFolder = async (parentPath?: string, dirName?: string) => {
   try {
     const base = parentPath || (await getPath('', true));
     await invoke('create_dir_recursive', { dirPath: `${base}/${dirName}` });
+    // New dir under `base` → invalidate `base`'s listing
+    invalidateDirCache(base);
   } catch (e) {
     handleError(e);
   }
@@ -58,10 +76,172 @@ export const newFile = async (filePath: string, newFileName: string) => {
   try {
     const base = filePath || (await getPath('', true));
     await invoke('write_file', { filePath: `${base}/${newFileName}.md`, text: '' });
+    // New file under `base` → invalidate `base`'s listing
+    invalidateDirCache(base);
   } catch (e) {
     handleError(e);
   }
 };
+
+// ---------------------------------------------------------------------------
+// File I/O with LRU cache
+// ---------------------------------------------------------------------------
+//
+// 50-entry LRU keyed by absolute file path. Use Map's insertion-order
+// iteration to find the oldest entry in O(1). Writes invalidate their own
+// path so readers get fresh content immediately after save/autosave.
+//
+// Rationale: opening a previously-visited tab re-invokes the Rust `read_file`
+// IPC even when the content is identical to what we just wrote. In big vaults
+// the round-trip dominates tab-switch latency; a short-lived cache collapses
+// it to a single Map.get() for hot tabs.
+
+const READ_CACHE_MAX = 50;
+const readCache = new Map<string, string>();
+
+/** Invalidate a single cache entry — call after any out-of-band mutation. */
+export const invalidateReadCache = (filePath: string) => {
+  readCache.delete(filePath);
+};
+
+/** Clear the entire read cache — call after bulk FS changes (vault open/close, etc.). */
+export const clearReadCache = () => {
+  readCache.clear();
+};
+
+/**
+ * Cached `read_file` wrapper. Returns content as string. Skips the cache in
+ * `isWeb` mode because the mock layer is already in-memory; callers in web
+ * mode should use mockReadFile directly.
+ */
+export const readFileCached = async (filePath: string): Promise<string> => {
+  if (isWeb) return '';
+  const cached = readCache.get(filePath);
+  if (cached !== undefined) {
+    // Touch: move to newest by re-inserting.
+    readCache.delete(filePath);
+    readCache.set(filePath, cached);
+    return cached;
+  }
+  const content = `${(await invoke('read_file', { filePath })) ?? ''}`;
+  // Evict the oldest (first-inserted) entry when over capacity.
+  if (readCache.size >= READ_CACHE_MAX) {
+    const oldest = readCache.keys().next().value;
+    if (oldest !== undefined) readCache.delete(oldest);
+  }
+  readCache.set(filePath, content);
+  return content;
+};
+
+/**
+ * `write_file` wrapper that keeps the LRU consistent — pre-populates the
+ * cache with the just-written content, so the next read is a hit.
+ */
+export const writeFileCached = async (filePath: string, text: string): Promise<void> => {
+  await invoke('write_file', { filePath, text });
+  if (!isWeb) {
+    if (readCache.size >= READ_CACHE_MAX && !readCache.has(filePath)) {
+      const oldest = readCache.keys().next().value;
+      if (oldest !== undefined) readCache.delete(oldest);
+    }
+    // Re-insert to mark as most-recent.
+    readCache.delete(filePath);
+    readCache.set(filePath, text);
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Directory-listing cache
+// ---------------------------------------------------------------------------
+//
+// Short-lived LRU for `read_directory` IPC responses. Sidebar re-renders on
+// tab switch / mode switch frequently visit the same folders (back/forward
+// in history, toggling between favorites/recent/all). A 20-entry LRU with a
+// 3-second TTL eliminates the redundant IPC round-trip for hot folders while
+// keeping staleness tight in case of out-of-band edits. All mutation helpers
+// (create/delete/move/rename) invalidate the affected parent dir explicitly.
+//
+// TTL guards against edge cases (external editor, git pull) without relying
+// solely on invalidation correctness.
+
+const DIR_CACHE_MAX = 20;
+const DIR_CACHE_TTL_MS = 3000;
+interface DirCacheEntry { res: ReadDirResponse; at: number; }
+const dirCache = new Map<string, DirCacheEntry>();
+
+/** Parent-dir extractor — handles both '/' and '\' separators for Windows compat. */
+const parentDir = (p: string): string => {
+  if (!p) return '';
+  // Match trailing segment after the LAST '/' or '\' — greedy, cross-platform
+  const idx = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+  return idx >= 0 ? p.slice(0, idx) : '';
+};
+
+/** Invalidate a single dir cache entry — call after any mutation under that dir. */
+export const invalidateDirCache = (dirPath: string) => {
+  if (!dirPath) return;
+  dirCache.delete(dirPath);
+};
+
+/** Clear the entire dir cache — call on vault switch / lock / unlock. */
+export const clearDirCache = () => { dirCache.clear(); };
+
+/**
+ * Cached `read_directory` wrapper. Returns ReadDirResponse (same shape as
+ * direct invoke). Skips the cache in `isWeb` mode — callers should call
+ * mockReadDirectory directly there.
+ */
+export const readDirectoryCached = async (dirPath: string): Promise<ReadDirResponse> => {
+  if (isWeb || !dirPath) return { files: [] };
+  const now = Date.now();
+  const hit = dirCache.get(dirPath);
+  if (hit && now - hit.at < DIR_CACHE_TTL_MS) {
+    // LRU touch
+    dirCache.delete(dirPath);
+    dirCache.set(dirPath, hit);
+    return hit.res;
+  }
+  const res: ReadDirResponse = await invoke('read_directory', { dir: dirPath });
+  if (dirCache.size >= DIR_CACHE_MAX) {
+    const oldest = dirCache.keys().next().value;
+    if (oldest !== undefined) dirCache.delete(oldest);
+  }
+  dirCache.set(dirPath, { res, at: now });
+  return res;
+};
+
+// ---------------------------------------------------------------------------
+// Zip import — wraps the Rust `import_zip_to_vault` command.
+// Contract: target_abs_path MUST be a fresh path (deduped by the caller).
+// Rust returns ImportZipResult on success or a tagged ImportZipError on
+// failure. Callers should pattern-match on error.kind.
+// ---------------------------------------------------------------------------
+
+export interface SkippedEntry { path: string; reason: string; }
+
+export interface ImportZipResult {
+  targetPath: string;
+  filesImported: number;
+  dirsImported: number;
+  skipped: SkippedEntry[];
+  cancelled: boolean;
+  elapsedMs: number;
+}
+
+export type ImportZipError =
+  | { kind: 'invalidZip'; reason: string }
+  | { kind: 'zipSlip'; path: string }
+  | { kind: 'bombRatio' }
+  | { kind: 'tooLarge' }
+  | { kind: 'tooManyEntries' }
+  | { kind: 'encryptedNotSupported' }
+  | { kind: 'targetExists'; path: string }
+  | { kind: 'emptyZip' }
+  | { kind: 'cancelled' }
+  | { kind: 'io'; reason: string };
+
+export const importZipToVault = (zipPath: string, targetAbsPath: string) =>
+  invoke<ImportZipResult>('import_zip_to_vault', { zipPath, targetAbsPath });
 
 // ---------------------------------------------------------------------------
 // Settings I/O — via Rust invoke (absolute paths, no BaseDirectory anchor)
@@ -189,7 +369,7 @@ export const createExampleNote = async () => {
   if (!vp) return;
   try {
     // Check if vault has any .md files by reading directory
-    const res: ReadDirResponse = await invoke('read_directory', { dir: vp });
+    const res = await readDirectoryCached(vp);
     const files = res?.files ?? [];
     const hasMd = files.some(f => f.file_name.endsWith('.md'));
     if (!hasMd) {
@@ -252,6 +432,10 @@ export const initApp = async () => {
 export const renameFile = async (file: FileType, newName: string) => {
   try {
     await invoke('rename_file_cmd', { filePath: file?.file_path, newName });
+    // File renamed in-place → parent dir's listing changed
+    invalidateDirCache(parentDir(file?.file_path ?? ''));
+    // Drop the old-path read cache entry so re-open pulls fresh
+    if (file?.file_path) invalidateReadCache(file.file_path);
   } catch (e) {
     handleError(e);
   }
@@ -260,6 +444,12 @@ export const renameFile = async (file: FileType, newName: string) => {
 export const moveFiles = async (filePaths: string[], destDir: string) => {
   try {
     await invoke('move_files', { filePaths, destDir });
+    // Invalidate both source dirs (unique) and the destination
+    const sourceDirs = new Set(filePaths.map(parentDir));
+    sourceDirs.forEach(invalidateDirCache);
+    invalidateDirCache(destDir);
+    // Drop moved files from the read cache — they live at new paths now
+    filePaths.forEach(invalidateReadCache);
   } catch (e) {
     handleError(e);
   }
@@ -280,6 +470,9 @@ export const selectDir = async (defaultPath?: string) => {
 export const deleteDir = async (dirPath: string) => {
   try {
     await invoke('delete_dir', { dirPath });
+    // Parent's listing changed + this dir's own cached listing is dead
+    invalidateDirCache(parentDir(dirPath));
+    invalidateDirCache(dirPath);
   } catch (e) {
     handleError(e);
   }
@@ -294,7 +487,7 @@ export const getFileFromInternalLink = async (href = '') => {
 
   let dirPath = (await getPath('', true)) + arr.join('/');
   dirPath = dirPath.replace(/\%20/g, ' ').replace(/\\\\/g, '');
-  const res: ReadDirResponse = await invoke('read_directory', { dir: dirPath });
+  const res = await readDirectoryCached(dirPath);
   const dirFiles = (res?.files as FileType[]) ?? [];
 
   const matchedItem = dirFiles.find((obj) => obj.file_name.toLowerCase().indexOf(fileName) >= 0);
@@ -388,4 +581,89 @@ export const exportDbToFs = async (targetDir: string): Promise<ExportStats> => {
 /** Delete the libsql DB files, write filesystem mode to settings, then quit. */
 export const resetToFilesystem = async (): Promise<void> => {
   await invoke('reset_to_filesystem');
+};
+
+// ---------------------------------------------------------------------------
+// Duplicate — create a sibling copy with a unique "foo copy.md" name.
+// Recursive for folders. Binary files (by extension) are skipped with a
+// console.warn rather than corrupted via UTF-8 round-trip; a binary-safe
+// Rust `duplicate_files` command is a follow-up.
+// ---------------------------------------------------------------------------
+
+const BINARY_EXTS = new Set([
+  'png','jpg','jpeg','gif','webp','bmp','ico','svg','heic','heif',
+  'mp3','wav','ogg','flac','aac','m4a',
+  'mp4','mov','avi','mkv','webm','m4v',
+  'pdf','zip','tar','gz','7z','rar','dmg','exe','bin','so','dylib',
+  'ttf','otf','woff','woff2',
+]);
+
+const looksBinary = (name: string): boolean => {
+  const dot = name.lastIndexOf('.');
+  if (dot < 0) return false;
+  return BINARY_EXTS.has(name.slice(dot + 1).toLowerCase());
+};
+
+const splitStemExt = (name: string): [string, string] => {
+  const dot = name.lastIndexOf('.');
+  if (dot <= 0) return [name, ''];
+  return [name.slice(0, dot), name.slice(dot)];
+};
+
+const siblingExists = async (parent: string, name: string): Promise<boolean> => {
+  invalidateDirCache(parent);
+  const res = await readDirectoryCached(parent);
+  return !!res.files?.some((f) => f.file_name === name);
+};
+
+const findUniqueDuplicateName = async (parent: string, origName: string): Promise<string> => {
+  const [stem, ext] = splitStemExt(origName);
+  let candidate = `${stem} copy${ext}`;
+  if (!(await siblingExists(parent, candidate))) return candidate;
+  for (let n = 2; n < 1000; n++) {
+    candidate = `${stem} copy ${n}${ext}`;
+    if (!(await siblingExists(parent, candidate))) return candidate;
+  }
+  throw new Error(`duplicateItem: no unique name for ${origName} after 1000 attempts`);
+};
+
+const duplicateAtPath = async (srcPath: string, destPath: string, isDir: boolean): Promise<void> => {
+  if (isDir) {
+    await invoke('create_dir_recursive', { dirPath: destPath });
+    const res = await readDirectoryCached(srcPath);
+    for (const child of res.files ?? []) {
+      const childDest = `${destPath}/${child.file_name}`;
+      await duplicateAtPath(child.file_path, childDest, child.is_dir);
+    }
+  } else {
+    if (looksBinary(srcPath)) {
+      console.warn('duplicateItem: skipping binary file (UTF-8 round-trip unsafe):', srcPath);
+      return;
+    }
+    const text = await readFileCached(srcPath);
+    await writeFileCached(destPath, text);
+  }
+};
+
+/**
+ * Duplicate a file or folder in place (creates a sibling with a
+ * "foo copy.md" / "foo copy 2.md" name). Recursive for folders.
+ * Returns the new path on success, null on failure.
+ */
+export const duplicateItem = async (item: FileType): Promise<string | null> => {
+  try {
+    const parent = item.file_path.slice(
+      0,
+      Math.max(item.file_path.lastIndexOf('/'), item.file_path.lastIndexOf('\\'))
+    );
+    if (!parent) return null;
+    const newName = await findUniqueDuplicateName(parent, item.file_name);
+    const newPath = `${parent}/${newName}`;
+    await duplicateAtPath(item.file_path, newPath, item.is_dir);
+    invalidateDirCache(parent);
+    return newPath;
+  } catch (e) {
+    handleError(e);
+    return null;
+  }
 };

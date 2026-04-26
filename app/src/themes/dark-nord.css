@@ -1,3 +1,11 @@
+/* @theme
+id: dark-nord
+name: Nord Dark
+variant: dark
+accent: "#88c0d0"
+description: Arctic, north-bluish palette
+*/
+
 [data-theme="dark-nord"] {
   --bg-primary: #2e3440;
   --bg-secondary: #3b4252;

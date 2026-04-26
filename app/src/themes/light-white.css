@@ -1,3 +1,11 @@
+/* @theme
+id: light-white
+name: Classic Light
+variant: light
+accent: "#2563eb"
+description: Clean, minimal light theme
+*/
+
 [data-theme="light-white"] {
   --bg-primary: #ffffff;
   --bg-secondary: #f3f4f6;

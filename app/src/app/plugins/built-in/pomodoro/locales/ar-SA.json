@@ -1,0 +1,14 @@
+{
+  "IDLE": "بومودورو",
+  "FOCUS": "تركيز",
+  "BREAK": "استراحة",
+  "DONE": "انتهى بومودورو",
+  "PAUSED_SUFFIX": "(متوقف مؤقتاً)",
+  "TOOLTIP_IDLE": "انقر لبدء جلسة تركيز لمدة 25 دقيقة",
+  "TOOLTIP_RUNNING": "انقر للإيقاف المؤقت",
+  "TOOLTIP_PAUSED": "انقر للاستئناف",
+  "TOOLTIP_DONE": "انقر لإعادة التعيين",
+  "ACTION_PAUSE": "إيقاف مؤقت",
+  "ACTION_PLAY": "استئناف",
+  "ACTION_STOP": "إيقاف"
+}

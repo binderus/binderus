@@ -1,3 +1,11 @@
+/* @theme
+id: dark-one-dark
+name: One Dark Pro
+variant: dark
+accent: "#61afef"
+description: Atom One Dark inspired
+*/
+
 [data-theme="dark-one-dark"] {
   --bg-primary: #282c34;
   --bg-secondary: #2c313a;

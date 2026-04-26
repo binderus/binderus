@@ -389,7 +389,7 @@ export default function ExportModal({ isOpen, onClose, markdown, fileName }: Pro
                 {EXPORT_OPTIONS.map(({ format, icon: Icon, iconClass, label, description }) => (
                   <button
                     key={format}
-                    className="dialog-export-btn flex items-center gap-3 p-3 rounded-lg border border-[var(--app-border-color,#444)] hover:bg-[var(--app-hover-bg,#3b4252)] transition-colors text-left"
+                    className="dialog-export-btn flex items-center gap-3 p-3 rounded-lg text-left"
                     onClick={() => handleExport(format)}
                     disabled={exporting !== null}
                   >

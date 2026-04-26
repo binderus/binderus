@@ -9,12 +9,12 @@ import { Dialog, Transition } from '@headlessui/react';
 import { invoke } from '@tauri-apps/api/core';
 import { debounce } from '../../utils/base-utils';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AiFillStar } from 'react-icons/ai';
-import { BsFileText, BsGear, BsLock, BsTerminal, BsXCircle, BsBoxArrowUpRight } from 'react-icons/bs';
+import { BsStarFill, BsFileText, BsGear, BsLock, BsTerminal, BsXCircle, BsBoxArrowUpRight } from 'react-icons/bs';
 import { FileType } from '../../types';
 import { getRelativePath, isWeb, t } from '../../utils/base-utils';
 import { getPath } from '../../utils/tauri-utils';
 import { useAppStore } from '../../hooks/use-app-store';
+import { useShallow } from 'zustand/react/shallow';
 
 interface AppCommand {
   id: string;
@@ -48,9 +48,13 @@ export default function QuickSwitcherModal({ isOpen, onClose, onFileSelect, comm
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isSearching, setIsSearching] = useState(false);
   const [basePath, setBasePath] = useState('');
-  const favourites = useAppStore((s) => s.favourites);
+  // useShallow: favourites is an array — avoid re-render on unrelated store mutations
+  const favourites = useAppStore(useShallow((s) => s.favourites));
 
-  // Build unified results list: commands → favourite matches → other file matches
+  // Build unified results list: commands → favourite matches → other file matches.
+  // Hard-capped at MAX_RESULTS so large vaults don't render 1000+ rows and stall the
+  // keyboard loop (most users scan top ~20; typing to narrow is faster than scrolling).
+  const MAX_RESULTS = 100;
   const results: QuickSwitcherItem[] = useMemo(() => {
     const items: QuickSwitcherItem[] = [];
     if (query.trim()) {
@@ -74,7 +78,7 @@ export default function QuickSwitcherModal({ isOpen, onClose, onFileSelect, comm
       // No query: show all commands
       commands.forEach((c) => items.push({ type: 'command', command: c, label: c.label }));
     }
-    return items;
+    return items.length > MAX_RESULTS ? items.slice(0, MAX_RESULTS) : items;
   }, [query, fileMatches, commands, favourites]);
 
   // Search files via Tauri backend
@@ -223,7 +227,7 @@ export default function QuickSwitcherModal({ isOpen, onClose, onFileSelect, comm
                     <span className="mr-3 opacity-50">
                       {item.type === 'file'
                         ? (favourites.some((f) => f.file_path === item.file!.file_path)
-                          ? <AiFillStar size={14} className="text-yellow-400" />
+                          ? <BsStarFill size={14} className="text-yellow-400" />
                           : <BsFileText size={14} />)
                         : item.command!.icon}
                     </span>

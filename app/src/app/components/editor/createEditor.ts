@@ -1,5 +1,5 @@
 /* Copyright 2021, Milkdown by Mirone. */
-import { defaultValueCtx, Editor, editorViewOptionsCtx, remarkStringifyOptionsCtx, rootCtx } from '@milkdown/core';
+import { defaultValueCtx, Editor, editorViewOptionsCtx, remarkStringifyOptionsCtx, rootCtx, type KeymapItem } from '@milkdown/core';
 import { $remark, $shortcut, $inputRule } from '@milkdown/utils';
 import { katexOptionsCtx, remarkMathPlugin, mathInlineSchema, mathBlockSchema, mathBlockInputRule } from '@milkdown/plugin-math';
 import { useAppStore } from '../../hooks/use-app-store';
@@ -27,6 +27,8 @@ import {
   wikilinkInputRule,
 } from './wikilink-plugin';
 import { codeBlockNodeViewPlugin } from './code-block-nodeview';
+import { pasteImagePlugin } from './paste-image-plugin';
+import { imageSchemaWithWidth, remarkImageWidthPlugin } from './image-schema';
 import { linkInputRule, linkTooltipPlugin } from './link-plugin';
 import { tableToolbarPlugin } from './table-toolbar-plugin';
 import { taskListPlugin } from './task-list-plugin';
@@ -95,6 +97,8 @@ export const createEditor = (
       fix(tree);
     }))
     .use(clipboard)
+    .use(remarkImageWidthPlugin)
+    .use(imageSchemaWithWidth)
     .use(history)
     .use(indent)
     .use(cursor)
@@ -114,6 +118,7 @@ export const createEditor = (
     .use(linkInputRule)
     .use(linkTooltipPlugin)
     .use(codeBlockNodeViewPlugin)
+    .use(pasteImagePlugin)
     .use(taskListPlugin)
     .use(columnResizingPlugin)
     .use(tableToolbarPlugin)
@@ -124,36 +129,48 @@ export const createEditor = (
       // Override Enter in paragraphs to insert a hard break (single newline)
       // instead of splitting into a new paragraph. Lists keep their normal Enter behavior.
       $shortcut(() => ({
-        Tab: (state, dispatch) => {
-          const { $from } = state.selection;
-          const parentNode = $from.node(-1);
-          const listItemType = state.schema.nodes['list_item'];
-          const taskListItemType = state.schema.nodes['task_list_item'];
-          const activeType = (listItemType && parentNode?.type === listItemType)
-            ? listItemType
-            : (taskListItemType && parentNode?.type === taskListItemType)
-              ? taskListItemType
-            : null;
-          if (!activeType) return false;
-          if ($from.parentOffset === 0) {
-            return sinkListItem(activeType)(state, dispatch);
-          }
-          dispatch?.(state.tr.insertText('\t'));
-          return true;
-        },
-        'Shift-Tab': (state, dispatch) => {
-          const { $from } = state.selection;
-          const parentNode = $from.node(-1);
-          const listItemType = state.schema.nodes['list_item'];
-          const taskListItemType = state.schema.nodes['task_list_item'];
-          const activeType = (listItemType && parentNode?.type === listItemType)
-            ? listItemType
-            : (taskListItemType && parentNode?.type === taskListItemType)
-              ? taskListItemType
-            : null;
-          if (!activeType) return false;
-          return liftListItem(activeType)(state, dispatch);
-        },
+        // Priority 100 > commonmark listItemKeymap default (50) so this runs first.
+        // Without higher priority, commonmark unconditionally sinks the list item on Tab
+        // regardless of cursor position.
+        Tab: {
+          key: 'Tab',
+          onRun: (_ctx: any) => (state: any, dispatch: any) => {
+            const { $from } = state.selection;
+            const parentNode = $from.node(-1);
+            const listItemType = state.schema.nodes['list_item'];
+            const taskListItemType = state.schema.nodes['task_list_item'];
+            const activeType = (listItemType && parentNode?.type === listItemType)
+              ? listItemType
+              : (taskListItemType && parentNode?.type === taskListItemType)
+                ? taskListItemType
+                : null;
+            if (!activeType) return false;
+            // Only sink (indent deeper) when caret is at the very beginning of the list item text
+            if ($from.parentOffset === 0) {
+              return sinkListItem(activeType)(state, dispatch);
+            }
+            dispatch?.(state.tr.insertText('\t'));
+            return true;
+          },
+          priority: 100,
+        } as KeymapItem,
+        'Shift-Tab': {
+          key: 'Shift-Tab',
+          onRun: (_ctx: any) => (state: any, dispatch: any) => {
+            const { $from } = state.selection;
+            const parentNode = $from.node(-1);
+            const listItemType = state.schema.nodes['list_item'];
+            const taskListItemType = state.schema.nodes['task_list_item'];
+            const activeType = (listItemType && parentNode?.type === listItemType)
+              ? listItemType
+              : (taskListItemType && parentNode?.type === taskListItemType)
+                ? taskListItemType
+                : null;
+            if (!activeType) return false;
+            return liftListItem(activeType)(state, dispatch);
+          },
+          priority: 100,
+        } as KeymapItem,
         Enter: (state, dispatch) => {
           // Read enterMode at call time so the setting takes effect without editor re-init
           if (useAppStore.getState().enterMode !== 'normal') return false;

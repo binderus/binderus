@@ -1,3 +1,11 @@
+/* @theme
+id: dark-catppuccin
+name: Catppuccin Mocha
+variant: dark
+accent: "#cba6f7"
+description: Soothing pastel dark theme
+*/
+
 [data-theme="dark-catppuccin"] {
   --bg-primary: #1e1e2e;
   --bg-secondary: #313244;

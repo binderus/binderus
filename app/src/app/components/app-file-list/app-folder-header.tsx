@@ -1,6 +1,6 @@
-import { VscRootFolder } from 'react-icons/vsc';
+import { BsFolderFill } from 'react-icons/bs';
 import { FileType } from '../../types';
-import { TbArrowBack } from 'react-icons/tb';
+import { BsArrowLeft } from 'react-icons/bs';
 import { useAppContext } from '../../hooks/use-app-context';
 import { useAppStore } from '../../hooks/use-app-store';
 import { t } from '../../utils/base-utils';
@@ -41,11 +41,11 @@ export default ({ folder, onClickBack, onClickRoot, onNewFolder, onNewFile }: Pr
     <div className="sidebar-header">
       <div className="flex items-center">
         <span className="sidebar-header-icon" onClick={onClickRoot}>
-          {isDbMode ? <FiDatabase size={15} /> : <VscRootFolder size={16} />}
+          {isDbMode ? <FiDatabase size={15} /> : <BsFolderFill size={16} />}
         </span>
         {folder && (
           <span className="sidebar-header-icon ml-1" onClick={onClickBack}>
-            <TbArrowBack size={16} />
+            <BsArrowLeft size={16} />
           </span>
         )}
         <span className="sidebar-dir-name">{folder ? `../${folder.file_name}` : (dataDir.split('/').pop() || dataDir)}</span>

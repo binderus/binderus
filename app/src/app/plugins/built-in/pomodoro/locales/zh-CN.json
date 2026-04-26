@@ -1,0 +1,14 @@
+{
+  "IDLE": "番茄钟",
+  "FOCUS": "专注",
+  "BREAK": "休息",
+  "DONE": "番茄钟完成",
+  "PAUSED_SUFFIX": "(已暂停)",
+  "TOOLTIP_IDLE": "点击开始 25 分钟专注会话",
+  "TOOLTIP_RUNNING": "点击暂停",
+  "TOOLTIP_PAUSED": "点击继续",
+  "TOOLTIP_DONE": "点击重置",
+  "ACTION_PAUSE": "暂停",
+  "ACTION_PLAY": "继续",
+  "ACTION_STOP": "停止"
+}

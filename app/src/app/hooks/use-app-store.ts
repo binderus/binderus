@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
-import { EditorTab, FileType, Theme, themeValues } from '../types';
+import { EditorMode, EditorTab, FileType, Theme, themeValues } from '../types';
 import { fontNames, fontNameToClassName, isWeb } from '../utils/base-utils';
 import { DEFAULT_THEME } from '../utils/constants';
 import { readVaultSettings, readVaultSettingsLatest, writeVaultSettings, readGlobalSettings, writeGlobalSettings } from '../utils/tauri-utils';
@@ -10,6 +10,18 @@ type Updater<T> = T | ((prev: T) => T);
 const resolve = <T,>(updater: Updater<T>, prev: T): T =>
   typeof updater === 'function' ? (updater as (prev: T) => T)(prev) : updater;
 
+// Rebuilds the `tabsById` lookup from the canonical `tabs` array.
+// Preserves referential stability for unchanged tabs because each entry in
+// `tabs` is itself produced with object-spread on mutation — so tabs that
+// weren't touched by the current action keep their old reference, and their
+// `tabsById[path]` entry stays === between renders. Called in every tab-mutating
+// action so the two stay in lock-step.
+const buildTabsById = (tabs: EditorTab[]): Record<string, EditorTab> => {
+  const out: Record<string, EditorTab> = {};
+  for (const t of tabs) out[t.file_path] = t;
+  return out;
+};
+
 export interface AppState {
   // File navigation
   refreshFolder: boolean;
@@ -18,8 +30,14 @@ export interface AppState {
   openedFiles: FileType[];
   favourites: FileType[];
 
-  // Tabs
+  // Tabs — `tabs` is the ordered array (drives TabBar + persistence). `tabsById` is
+  // a derived lookup map kept in lock-step with `tabs` on every mutation so
+  // per-tab consumers can do O(1) access with referential stability: the entry
+  // for tab X keeps its old reference when tab Y is the one that changed.
+  // Combined with `useShallow` on `s.tabs` this cuts tab-bar + editor-panel
+  // re-renders on keystroke from O(tabs) to O(1).
   tabs: EditorTab[];
+  tabsById: Record<string, EditorTab>;
   activeTabPath: string | null;
 
   // Settings
@@ -32,6 +50,7 @@ export interface AppState {
   editorColor: string;
   editorBgColor: string;
   settingEmail: string;
+  clientUuid: string;
   storageBackend: string;
   encryptionEnabled: boolean;
   autoLockTimeout: number;
@@ -55,6 +74,7 @@ export interface AppState {
   reorderTab: (fromIndex: number, toIndex: number) => void;
   updateTabContent: (filePath: string, content: string) => void;
   markTabDirty: (filePath: string, isDirty: boolean) => void;
+  setTabEditorMode: (filePath: string, mode: EditorMode) => void;
   closeOtherTabs: (filePath: string) => void;
   closeAllTabs: () => void;
   renameTab: (oldPath: string, newPath: string, newName: string) => void;
@@ -69,6 +89,7 @@ export interface AppState {
   setEditorColor: (color: Updater<string>) => void;
   setEditorBgColor: (color: Updater<string>) => void;
   setSettingEmail: (email: Updater<string>) => void;
+  setClientUuid: (uuid: Updater<string>) => void;
   setStorageBackend: (backend: Updater<string>) => void;
   setEncryptionEnabled: (enabled: Updater<boolean>) => void;
   setAutoLockTimeout: (timeout: Updater<number>) => void;
@@ -90,6 +111,7 @@ export const useAppStore = create<AppState>()(
         openedFiles: [],
         favourites: [],
         tabs: [],
+        tabsById: {},
         activeTabPath: null,
         settingJson: {},
         dataDir: '',
@@ -100,6 +122,7 @@ export const useAppStore = create<AppState>()(
         editorColor: '',
         editorBgColor: '',
         settingEmail: '',
+        clientUuid: '',
         storageBackend: 'filesystem',
         encryptionEnabled: false,
         autoLockTimeout: 15,
@@ -123,6 +146,7 @@ export const useAppStore = create<AppState>()(
         setEditorColor: (updater) => set((s) => ({ editorColor: resolve(updater, s.editorColor) })),
         setEditorBgColor: (updater) => set((s) => ({ editorBgColor: resolve(updater, s.editorBgColor) })),
         setSettingEmail: (updater) => set((s) => ({ settingEmail: resolve(updater, s.settingEmail) })),
+        setClientUuid: (updater) => set((s) => ({ clientUuid: resolve(updater, s.clientUuid) })),
         setStorageBackend: (updater) => set((s) => ({ storageBackend: resolve(updater, s.storageBackend) })),
         setEncryptionEnabled: (updater) =>
           set((s) => ({ encryptionEnabled: resolve(updater, s.encryptionEnabled) })),
@@ -147,6 +171,7 @@ export const useAppStore = create<AppState>()(
           }
           set({
             tabs: newTabs,
+            tabsById: buildTabsById(newTabs),
             activeTabPath: newActiveTabPath,
             openedFiles: s.openedFiles.filter((f) => f.file_path !== item.file_path),
             recentList: s.recentList.filter((f) => f.file_path !== item.file_path),
@@ -172,8 +197,10 @@ export const useAppStore = create<AppState>()(
               content: null,
               isDirty: false
             };
+            const newTabs = [...s.tabs, newTab];
             set({
-              tabs: [...s.tabs, newTab],
+              tabs: newTabs,
+              tabsById: buildTabsById(newTabs),
               activeTabPath: file.file_path,
               openedFiles: [file]
             });
@@ -192,6 +219,7 @@ export const useAppStore = create<AppState>()(
           const activeTab = newActiveTabPath ? newTabs.find((t) => t.file_path === newActiveTabPath) : null;
           set({
             tabs: newTabs,
+            tabsById: buildTabsById(newTabs),
             activeTabPath: newActiveTabPath,
             openedFiles: activeTab
               ? [{ file_path: activeTab.file_path, file_name: activeTab.file_name, file_text: '', is_file: true, is_dir: false }]
@@ -215,38 +243,54 @@ export const useAppStore = create<AppState>()(
           const tabs = [...get().tabs];
           const [moved] = tabs.splice(fromIndex, 1);
           tabs.splice(toIndex, 0, moved);
-          set({ tabs });
+          // tabsById rebuild is cheap here and reorder doesn't change which
+          // tab lives at which path, so references stay === for consumers
+          // reading by path.
+          set({ tabs, tabsById: buildTabsById(tabs) });
         },
 
         updateTabContent: (filePath, content) => {
-          set((s) => ({
-            tabs: s.tabs.map((t) => (t.file_path === filePath ? { ...t, content } : t))
-          }));
+          set((s) => {
+            const newTabs = s.tabs.map((t) => (t.file_path === filePath ? { ...t, content } : t));
+            return { tabs: newTabs, tabsById: buildTabsById(newTabs) };
+          });
         },
 
         markTabDirty: (filePath, isDirty) => {
-          set((s) => ({
-            tabs: s.tabs.map((t) => (t.file_path === filePath ? { ...t, isDirty } : t))
-          }));
+          set((s) => {
+            const newTabs = s.tabs.map((t) => (t.file_path === filePath ? { ...t, isDirty } : t));
+            return { tabs: newTabs, tabsById: buildTabsById(newTabs) };
+          });
+        },
+
+        setTabEditorMode: (filePath, editorMode) => {
+          set((s) => {
+            const newTabs = s.tabs.map((t) => (t.file_path === filePath ? { ...t, editorMode } : t));
+            return { tabs: newTabs, tabsById: buildTabsById(newTabs) };
+          });
         },
 
         closeOtherTabs: (filePath) => {
           const s = get();
           const kept = s.tabs.filter((t) => t.file_path === filePath);
-          set({ tabs: kept, activeTabPath: filePath });
+          set({ tabs: kept, tabsById: buildTabsById(kept), activeTabPath: filePath });
         },
 
         closeAllTabs: () => {
-          set({ tabs: [], activeTabPath: null, openedFiles: [] });
+          set({ tabs: [], tabsById: {}, activeTabPath: null, openedFiles: [] });
         },
 
         renameTab: (oldPath, newPath, newName) => {
-          set((s) => ({
-            tabs: s.tabs.map((t) =>
+          set((s) => {
+            const newTabs = s.tabs.map((t) =>
               t.file_path === oldPath ? { ...t, file_path: newPath, file_name: newName } : t
-            ),
-            activeTabPath: s.activeTabPath === oldPath ? newPath : s.activeTabPath
-          }));
+            );
+            return {
+              tabs: newTabs,
+              tabsById: buildTabsById(newTabs),
+              activeTabPath: s.activeTabPath === oldPath ? newPath : s.activeTabPath
+            };
+          });
         }
       }),
       {
@@ -263,11 +307,18 @@ export const useAppStore = create<AppState>()(
             file_path: t.file_path,
             file_name: t.file_name,
             content: null,
-            isDirty: false
+            isDirty: false,
+            editorMode: t.editorMode
           })),
           activeTabPath: state.activeTabPath,
           sidebarView: state.sidebarView
-        })
+        }),
+        // `tabsById` is derived state — not persisted. Rebuild it from the
+        // restored `tabs` array once rehydration completes so consumers that
+        // read via `s.tabsById[path]` work on first render.
+        onRehydrateStorage: () => (state) => {
+          if (state) state.tabsById = buildTabsById(state.tabs ?? []);
+        }
       }
     )
   )

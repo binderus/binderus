@@ -1,0 +1,14 @@
+{
+  "IDLE": "ポモドーロ",
+  "FOCUS": "集中",
+  "BREAK": "休憩",
+  "DONE": "ポモドーロ完了",
+  "PAUSED_SUFFIX": "(一時停止)",
+  "TOOLTIP_IDLE": "25分の集中セッションを開始",
+  "TOOLTIP_RUNNING": "クリックで一時停止",
+  "TOOLTIP_PAUSED": "クリックで再開",
+  "TOOLTIP_DONE": "クリックでリセット",
+  "ACTION_PAUSE": "一時停止",
+  "ACTION_PLAY": "再開",
+  "ACTION_STOP": "停止"
+}

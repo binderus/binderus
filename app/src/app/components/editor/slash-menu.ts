@@ -9,6 +9,7 @@ import {
   bulletListSchema,
   codeBlockSchema,
   headingSchema,
+  hrSchema,
   orderedListSchema,
   paragraphSchema
 } from '@milkdown/preset-commonmark';
@@ -30,9 +31,9 @@ const listboxStyles: Partial<CSSStyleDeclaration> = {
   maxHeight: '320px',
   overflowY: 'auto',
   display: 'none',
-  background: 'var(--color-bg-secondary, #1f2937)',
-  color: 'var(--color-text, #e5e7eb)',
-  border: '1px solid var(--color-border, #374151)',
+  background: 'var(--popover-bg, #1f2937)',
+  color: 'var(--menu-item-fg, #e5e7eb)',
+  border: '1px solid var(--popover-border, #374151)',
   borderRadius: '10px',
   boxShadow: '0 18px 40px rgba(0, 0, 0, 0.35)',
   padding: '6px'
@@ -49,7 +50,8 @@ const optionBaseStyles: Partial<CSSStyleDeclaration> = {
 };
 
 const optionActiveStyles: Partial<CSSStyleDeclaration> = {
-  background: 'rgba(59, 130, 246, 0.18)'
+  background: 'var(--menu-item-hover-bg, rgba(59, 130, 246, 0.18))',
+  color: 'var(--menu-item-hover-fg, inherit)'
 };
 
 const optionIdleStyles: Partial<CSSStyleDeclaration> = {
@@ -148,6 +150,24 @@ export const createSlashMenuSpec = (ctx: any) => {
       run: () => runCommand(setBlockType(diagramSchema.type(ctx), { identity: createDiagramIdentity(), value: '' }))
     },
     {
+      id: 'divide-line',
+      label: 'Divide Line',
+      keywords: ['divider', 'divide', 'hr', 'horizontal', 'rule', 'separator', 'line'],
+      run: () => {
+        const view = ctx.get(editorViewCtx);
+        const { state } = view;
+        const { $from } = state.selection;
+        const blockStart = $from.start();
+        const cursorPos = $from.pos;
+        let tr = state.tr;
+        if (cursorPos > blockStart) tr = tr.deleteRange(blockStart, cursorPos);
+        const hr = hrSchema.type(ctx).create();
+        tr = tr.replaceSelectionWith(hr);
+        view.dispatch(tr.scrollIntoView());
+        view.focus();
+      }
+    },
+    {
       id: 'table',
       label: 'Table',
       keywords: ['table', 'grid', 'rows', 'columns', 'spreadsheet'],
@@ -177,8 +197,16 @@ export const createSlashMenuSpec = (ctx: any) => {
     });
   };
 
+  let lastQuery: string | null = null;
+
   const render = (view: any) => {
     const filtered = getFilteredItems(view);
+    const currentQuery = parseSlashQuery(provider?.getContent(view) ?? '');
+    // Reset to top whenever the search query changes
+    if (currentQuery !== lastQuery) {
+      activeIndex = 0;
+      lastQuery = currentQuery;
+    }
     activeIndex = Math.min(activeIndex, Math.max(filtered.length - 1, 0));
     listbox.replaceChildren();
 
@@ -211,6 +239,10 @@ export const createSlashMenuSpec = (ctx: any) => {
       });
       listbox.appendChild(option);
     });
+
+    // Scroll active option into view
+    const active = listbox.querySelector('[aria-selected="true"]') as HTMLElement | null;
+    active?.scrollIntoView({ block: 'nearest' });
   };
 
   const setVisibility = (visible: boolean) => {
@@ -225,7 +257,7 @@ export const createSlashMenuSpec = (ctx: any) => {
         debounce: 0,
         shouldShow: (editorView) => getFilteredItems(editorView).length > 0
       });
-      provider.onShow = () => setVisibility(true);
+      provider.onShow = () => { activeIndex = 0; setVisibility(true); };
       provider.onHide = () => setVisibility(false);
 
       render(view);

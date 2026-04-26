@@ -11,6 +11,12 @@ import { VERSION, BINDERUS_WEB_URL } from '../utils/constants';
 import { httpFetch } from '../utils/api-utils';
 import { isWeb } from '../utils/base-utils';
 import { type as osType, version as osVersion } from '@tauri-apps/plugin-os';
+import { useAppStore } from './use-app-store';
+
+const INTERNAL_EMAIL = 'binderusapp@gmail.com';
+function isInternalUser(): boolean {
+  return useAppStore.getState().settingEmail?.trim().toLowerCase() === INTERNAL_EMAIL;
+}
 
 export interface VersionCheckResult {
   latestVersion: string | null;
@@ -43,10 +49,15 @@ function buildVersionUrl(src: 'ping' | 'check'): string {
   const os = getOSInfo();
   const lang = sanitize(navigator?.language ?? '');
   const scr = sanitize(`${screen.width}x${screen.height}`);
-  return `${BINDERUS_WEB_URL}/api/version?v=${ver}&os=${os}&lang=${lang}&scr=${scr}&src=${src}`;
+  const { clientUuid, settingEmail } = useAppStore.getState();
+  const uid = sanitize(clientUuid ?? '');
+  const email = settingEmail?.trim() ?? '';
+  const emailParam = email ? `&email=${encodeURIComponent(email)}` : '';
+  return `${BINDERUS_WEB_URL}/api/version?v=${ver}&os=${os}&lang=${lang}&scr=${scr}&src=${src}&uid=${uid}${emailParam}`;
 }
 
 export async function checkLatestVersion(): Promise<VersionCheckResult> {
+  if (import.meta.env.DEV || isInternalUser()) return { latestVersion: null, updateUrl: null };
   try {
     const res = await httpFetch(buildVersionUrl('check'));
     const data = await res.json() as VersionResponse;
@@ -62,8 +73,9 @@ export async function checkLatestVersion(): Promise<VersionCheckResult> {
   return { latestVersion: null, updateUrl: null };
 }
 
-/** Fire-and-forget version check 10s after launch. Server captures IP automatically. */
+/** Fire-and-forget version check 10s after launch. Skipped in dev builds or for internal users. */
 export function scheduleStartupVersionPing(): void {
+  if (import.meta.env.DEV || isInternalUser()) return;
   setTimeout(() => {
     httpFetch(buildVersionUrl('ping')).catch(() => {});
   }, 10_000);

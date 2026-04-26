@@ -6,11 +6,10 @@
 // Outputs: Renders a navigable tree; calls onSelect when user clicks a folder
 
 import { useEffect, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { FiChevronRight, FiChevronDown, FiFolder } from 'react-icons/fi';
 import { isWeb } from '../../utils/base-utils';
 import { mockReadDirectory } from '../../utils/mock-data';
-import { ReadDirResponse } from '../../utils/tauri-utils';
+import { readDirectoryCached } from '../../utils/tauri-utils';
 import { FileType } from '../../types';
 
 export interface FolderTreeProps {
@@ -31,7 +30,7 @@ async function loadFolders(dirPath: string): Promise<TreeNode[]> {
     const res = mockReadDirectory();
     files = (res?.files as FileType[]) ?? [];
   } else {
-    const res: ReadDirResponse = await invoke('read_directory', { dir: dirPath });
+    const res = await readDirectoryCached(dirPath);
     files = (res?.files as FileType[]) ?? [];
   }
   return files

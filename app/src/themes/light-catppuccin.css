@@ -1,3 +1,11 @@
+/* @theme
+id: light-catppuccin
+name: Catppuccin Latte
+variant: light
+accent: "#8839ef"
+description: Warm pastel light theme
+*/
+
 [data-theme="light-catppuccin"] {
   --bg-primary: #eff1f5;
   --bg-secondary: #e6e9ef;

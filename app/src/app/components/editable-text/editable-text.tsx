@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AiOutlineEdit } from 'react-icons/ai';
+import { BsPencil } from 'react-icons/bs';
 import { Tooltip } from '../tooltip/tooltip';
 import { t } from '../../utils/base-utils';
 
@@ -80,7 +80,7 @@ export default ({ text, onChange }: Props) => {
       <Tooltip content={t('TEXT_RENAME_FILE')}>
         {text && (
           <button className="ml-2 text-gray-600 hover:text-blue-500" onClick={onClick}>
-            <AiOutlineEdit />
+            <BsPencil />
           </button>
         )}
       </Tooltip>

@@ -104,6 +104,7 @@
   padding: 8px 16px;
   font-size: 0.875rem;
   cursor: pointer;
+  user-select: none;
 }
 .sidebar-item:hover {
   background-color: var(--sidebar-item-hover);
@@ -122,6 +123,8 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* Prevent elastic overscroll from bouncing the whole WebView window */
+  overscroll-behavior: none;
 }
 
 body {
@@ -283,6 +286,51 @@ code {
 .dialog-btn:hover {
   background-color: var(--dialog-btn-hover);
 }
+
+/* Inline text-link style for low-emphasis actions in settings rows.
+   Used when "buttons" would be visually heavy (e.g. theme management toolbar). */
+.link-btn {
+  display: inline-flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 2px 0;
+  margin: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: opacity 0.12s, color 0.12s;
+}
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+.link-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.link-btn.link-btn-danger {
+  color: var(--color-error);
+}
+
+.dialog-export-btn {
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border-primary);
+  border-radius: 8px;
+  color: var(--dialog-fg);
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s;
+}
+.dialog-export-btn:hover {
+  background-color: var(--menu-item-hover-bg);
+  border-color: var(--border-secondary, var(--border-primary));
+}
+.dialog-export-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .dialog-version {
   color: var(--dialog-version);
   font-size: 0.875rem;
@@ -338,6 +386,7 @@ code {
   transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.15s;
   will-change: transform;
   overflow: hidden;
+  user-select: none;
 }
 .sidebar-collapsed {
   transform: translateX(-100%);
@@ -432,6 +481,7 @@ code {
   font-size: 0.8125rem;
   cursor: pointer;
   color: var(--sidebar-fg);
+  user-select: none;
   transition:
     background-color 0.1s,
     color 0.1s;
@@ -448,6 +498,7 @@ code {
   cursor: pointer;
   background-color: var(--sidebar-item-active);
   color: var(--icon-fg-hover);
+  user-select: none;
 }
 .sidebar-folder {
   display: flex;
@@ -456,6 +507,7 @@ code {
   font-size: 0.8125rem;
   cursor: pointer;
   color: var(--sidebar-folder);
+  user-select: none;
   transition:
     background-color 0.1s,
     color 0.1s;
@@ -479,6 +531,115 @@ code {
 }
 .sidebar-footer-item:hover {
   color: var(--sidebar-fg-hover);
+}
+
+/* ------------ Status Bar ------------ */
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  min-height: 20px;
+  padding: 0 12px;
+  font-size: 0.6875rem;
+  color: color-mix(in srgb, var(--fg-muted) 70%, transparent);
+  background-color: var(--tab-bg);
+  user-select: none;
+  transition: color 0.15s;
+}
+.status-bar:hover {
+  color: var(--fg-secondary);
+}
+.status-bar-section {
+  display: flex;
+  align-items: center;
+}
+.status-bar-item {
+  white-space: nowrap;
+  padding: 0 4px;
+  border-radius: 3px;
+  cursor: default;
+  transition: background 0.1s, color 0.1s;
+}
+.status-bar-item:hover {
+  background: color-mix(in srgb, var(--fg-muted) 12%, transparent);
+  color: var(--fg-primary);
+}
+.status-bar-item-clickable {
+  cursor: pointer;
+}
+.status-bar-item-clickable:hover {
+  background: color-mix(in srgb, var(--fg-muted) 15%, transparent);
+  color: var(--fg-primary);
+}
+.status-bar-item-has-actions {
+  position: relative;
+}
+.status-bar-item-actions {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-primary);
+  border-radius: 4px;
+  padding: 3px 4px;
+  gap: 2px;
+  white-space: nowrap;
+  z-index: 200;
+  flex-direction: row;
+  align-items: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+.status-bar-item-actions {
+  display: flex;
+}
+.status-bar-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-primary);
+  font-size: 0.6875rem;
+  padding: 3px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.4;
+  transition: background 0.1s;
+}
+.status-bar-action-btn:hover {
+  background: color-mix(in srgb, var(--fg-muted) 20%, transparent);
+  color: var(--fg-primary);
+}
+/* MD Text editor */
+.mdte-heading {
+  color: #7ec8e3;
+  font-weight: 600;
+}
+.mdte-link {
+  color: #7aa2f7;
+  opacity: 0.75;
+}
+.mdte-fence-marker {
+  color: #bb9af7;
+  opacity: 0.7;
+}
+.mdte-code-block {
+  color: var(--fg-primary);
+  opacity: 0.55;
+}
+.mdte-inline-code {
+  color: #e0af68;
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* Dot separator · between items */
+.status-bar-sep::before {
+  content: '\00B7';
+  margin: 0 4px;
+  opacity: 0.5;
 }
 
 /* ------------ Tab Bar ------------ */
@@ -734,6 +895,15 @@ body.custom-styles {
   background-color: var(--editor-bg-color) !important;
 }
 
+/* Regular links — no underline, same blue as MD Text mode */
+.milkdown .editor a {
+  color: #7aa2f7;
+  text-decoration: none;
+}
+.milkdown .editor a:hover {
+  text-decoration: underline;
+}
+
 /* Wikilinks [[target]] — distinct color from regular links */
 .milkdown .editor a[href^="wikilink://"] {
   color: var(--editor-wikilink);
@@ -967,19 +1137,103 @@ body.custom-styles {
   color: var(--menu-item-hover-fg);
 }
 
+/* Placeholder — hint text in empty paragraphs */
+.editor-placeholder::before {
+  position: absolute;
+  color: var(--fg-secondary, #6b7280);
+  opacity: 0.45;
+  pointer-events: none;
+  height: 0;
+  content: attr(data-placeholder);
+}
+
+/* Style toolbar — floating formatting toolbar shown on text selection */
+.style-toolbar[data-show='false'] {
+  display: none;
+}
+.style-toolbar {
+  z-index: 30;
+  position: absolute;
+  display: flex;
+  align-items: center;
+  background: var(--popover-bg);
+  border: 1px solid var(--border-color, #374151);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+.style-toolbar-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--border-color, #374151);
+  opacity: 0.5;
+}
+.style-toolbar-btn {
+  width: 32px;
+  height: 32px;
+  margin: 4px;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 4px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.style-toolbar-btn svg {
+  width: 20px;
+  height: 20px;
+  color: var(--fg-secondary);
+  fill: var(--fg-secondary);
+}
+.style-toolbar-btn:hover {
+  background: var(--menu-item-hover-bg);
+}
+.style-toolbar-btn:hover svg {
+  color: var(--menu-item-hover-fg);
+  fill: var(--menu-item-hover-fg);
+}
+.style-toolbar-btn.active svg {
+  color: var(--accent);
+  fill: var(--accent);
+}
+
 /* prosemirror-tables: column resize handle and cell selection overlay
    (replaces @milkdown/prose/style/tables.css which is not in the package exports map) */
-.ProseMirror .tableWrapper { overflow-x: auto; }
+/* Stronger selector (`.milkdown .ProseMirror`) beats theme-nord's
+   `.ProseMirror .tableWrapper { overflow-x: auto }` so our overflow + radius
+   apply reliably. `overflow: auto` (both axes) creates a scroll context that
+   DOES clip to border-radius — unlike `overflow-x: auto` with implied
+   `overflow-y: visible`, which ignores the rounded corners and was the
+   source of the persistent top-left notch. */
+.milkdown .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  border: 1px solid var(--table-border);
+  border-radius: 4px 4px 0 0;
+  margin: 4px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--table-border) transparent;
+}
+.milkdown .ProseMirror .tableWrapper::-webkit-scrollbar { height: 4px; width: 4px; }
+.milkdown .ProseMirror .tableWrapper::-webkit-scrollbar-track { background: transparent; }
+.milkdown .ProseMirror .tableWrapper::-webkit-scrollbar-thumb {
+  background: var(--table-border);
+  border-radius: 2px;
+}
+/* Define a sensible default cell min-width so columns share available space evenly */
+.ProseMirror { --default-cell-min-width: 80px; }
 .ProseMirror table {
   border-collapse: collapse;
   table-layout: fixed;
   width: 100%;
-  overflow: hidden;
 }
 .ProseMirror td, .ProseMirror th {
   vertical-align: top;
   box-sizing: border-box;
   position: relative;
+  overflow: hidden; /* clips .selectedCell::after within each cell */
 }
 .ProseMirror .column-resize-handle {
   position: absolute;
@@ -1004,22 +1258,42 @@ body.custom-styles {
 /* Table styles */
 .milkdown .editor table {
   border-collapse: collapse !important;
-  border: 1px solid var(--table-border) !important;
+  border: none !important;
   width: 100%;
+}
+/* Override Milkdown theme's bright gray-200 tr border-bottom */
+.milkdown .editor tr {
+  border-bottom: 1px solid var(--table-border) !important;
+}
+.milkdown .editor tr:last-child {
+  border-bottom: none !important;
 }
 .milkdown .editor th,
 .milkdown .editor td {
   border: 1px solid var(--table-border) !important;
   padding: 6px 12px !important;
+  min-width: 80px;
 }
+/* Remove outer cell borders — wrapper provides the frame */
+.milkdown .editor tr:first-child th,
+.milkdown .editor tr:first-child td { border-top: none !important; }
+.milkdown .editor tr:last-child th,
+.milkdown .editor tr:last-child td { border-bottom: none !important; }
+.milkdown .editor th:first-child,
+.milkdown .editor td:first-child { border-left: none !important; }
+.milkdown .editor th:last-child,
+.milkdown .editor td:last-child { border-right: none !important; }
 .milkdown .editor th {
-  background-color: var(--table-header-bg) !important;
+  /* No distinct background — a contrasting fill here bleeds past the
+     wrapper's rounded corners and shows a visible notch. Header still
+     reads as header via its bold weight + the color variable. */
+  background-color: transparent !important;
   color: var(--table-header-fg) !important;
   font-weight: 600 !important;
 }
 .milkdown .editor td {
   background-color: transparent !important;
-  color: var(--fg-primary) !important;
+  color: var(--editor-fg) !important;
 }
 
 /* Mermaid diagrams */
@@ -1076,6 +1350,7 @@ body.custom-styles {
   min-width: 3rem;
   width: 100%;
 }
+
 
 /* ------------ Font Families ------------ */
 

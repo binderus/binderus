@@ -1,3 +1,11 @@
+/* @theme
+id: dark-dracula
+name: Dracula
+variant: dark
+accent: "#bd93f9"
+description: Dark theme with vivid colors
+*/
+
 [data-theme="dark-dracula"] {
   --bg-primary: #282a36;
   --bg-secondary: #44475a;

@@ -1,3 +1,11 @@
+/* @theme
+id: dark-solarized
+name: Solarized Dark
+variant: dark
+accent: "#268bd2"
+description: Scientifically designed color scheme
+*/
+
 [data-theme="dark-solarized"] {
   --bg-primary: #002b36;
   --bg-secondary: #073642;

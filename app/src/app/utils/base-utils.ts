@@ -4,22 +4,33 @@ import { open } from '@tauri-apps/plugin-shell';
 
 import intl from 'react-intl-universal';
 import enUS from '../../locales/en-US.json';
-import ja from '../../locales/ja.json';
-import esES from '../../locales/es-ES.json';
-import zhCN from '../../locales/zh-CN.json';
 import { getPath } from './tauri-utils';
 
-export const i18nLocales = {
+// Only en-US (the default/fallback) is loaded eagerly. All other locales are
+// fetched on demand when initI18n() is called with a non-default locale.
+const i18nLocales: Record<string, any> = {
   null: enUS,
-  'zh-CN': zhCN,
   'en-US': enUS,
-  ja: ja,
-  'es-ES': esES
 };
-const localesKeys = Object.keys(i18nLocales);
 
-// Initialize intl eagerly with default locale to avoid warnings
-// when t() is called before initI18n() completes (due to debounce)
+// Locale ID → dynamic importer (data loaded on first use)
+const localeLoaders: Record<string, () => Promise<any>> = {
+  'zh-CN': () => import('../../locales/zh-CN.json'),
+  ja: () => import('../../locales/ja.json'),
+  'es-ES': () => import('../../locales/es-ES.json'),
+  'de-DE': () => import('../../locales/de-DE.json'),
+  'fr-FR': () => import('../../locales/fr-FR.json'),
+  'it-IT': () => import('../../locales/it-IT.json'),
+  'hi-IN': () => import('../../locales/hi-IN.json'),
+  'ru-RU': () => import('../../locales/ru-RU.json'),
+  'ar-SA': () => import('../../locales/ar-SA.json'),
+};
+
+// Supported locale IDs (used for matching without loading locale data)
+const SUPPORTED_LOCALE_IDS = ['en-US', 'zh-CN', 'ja', 'es-ES', 'de-DE', 'fr-FR', 'it-IT', 'hi-IN', 'ru-RU', 'ar-SA'];
+
+// Initialize intl eagerly with en-US to avoid warnings when t() is called
+// before initI18n() completes.
 intl.init({
   currentLocale: DEFAULT_LANG,
   locales: i18nLocales,
@@ -28,10 +39,16 @@ intl.init({
 });
 
 export const locales = [
-  { id: 'zh-CN', name: 'Chinese (Simplified)' },
   { id: 'en-US', name: 'English' },
-  { id: 'ja', name: 'Japanese' },
-  { id: 'es-ES', name: 'Spanish (Spain)' }
+  { id: 'zh-CN', name: '中文' },
+  { id: 'ja', name: '日本語' },
+  { id: 'de-DE', name: 'Deutsch' },
+  { id: 'es-ES', name: 'Español' },
+  { id: 'fr-FR', name: 'Français' },
+  { id: 'it-IT', name: 'Italiano' },
+  { id: 'hi-IN', name: 'हिन्दी' },
+  { id: 'ru-RU', name: 'Русский' },
+  { id: 'ar-SA', name: 'العربية' }
 ];
 
 // https://gist.github.com/ifthisandthat/496054
@@ -92,19 +109,48 @@ export const getOS = () => {
   return os;
 };
 
-export const initI18n = (userLocale = 'en-US') => {
-  if (userLocale) {
-    // Use matchSupportedLocale for prefix matching (e.g. 'ja-JP' → 'ja', 'zh' → 'zh-CN')
-    const resolved = matchSupportedLocale(userLocale);
-    intl.init({
-      currentLocale: resolved,
-      locales: i18nLocales,
-      fallbackLocale: DEFAULT_LANG,
-      warningHandler: () => {}
-    });
+export const initI18n = async (userLocale = 'en-US') => {
+  if (!userLocale) return;
+  // Use matchSupportedLocale for prefix matching (e.g. 'ja-JP' → 'ja', 'zh' → 'zh-CN')
+  const resolved = matchSupportedLocale(userLocale);
+  // Load locale data on first use — skip if already cached or it's the default
+  if (resolved !== DEFAULT_LANG && !i18nLocales[resolved]) {
+    const loader = localeLoaders[resolved];
+    if (loader) {
+      const mod = await loader();
+      i18nLocales[resolved] = mod.default ?? mod;
+    }
   }
+  intl.init({
+    currentLocale: resolved,
+    locales: i18nLocales,
+    fallbackLocale: DEFAULT_LANG,
+    warningHandler: () => {}
+  });
 };
 export const t = (key: string, variables = {}) => intl.get(key, variables);
+
+/**
+ * Pick a folder name that doesn't collide with any existing sibling.
+ * Appends " (2)", " (3)", … until a free name is found, matching macOS/Windows
+ * Finder/Explorer conventions. Case-insensitive comparison so users on
+ * case-insensitive filesystems (macOS default, Windows) can't smuggle a
+ * collision past the check by varying case.
+ */
+export const dedupeFolderName = (existingNames: string[], base: string): string => {
+  const used = new Set(existingNames.map((n) => n.toLowerCase()));
+  if (!used.has(base.toLowerCase())) return base;
+  for (let i = 2; i < 10_000; i++) {
+    const cand = `${base} (${i})`;
+    if (!used.has(cand.toLowerCase())) return cand;
+  }
+  // Fallback — extremely unlikely. Use a timestamp so we don't block the user.
+  return `${base} (${Date.now()})`;
+};
+
+/** Strip a trailing ".zip" extension (case-insensitive). */
+export const stripZipExtension = (name: string): string =>
+  name.replace(/\.zip$/i, '');
 
 // replace non-standard chars from file/folder names with '_' chars
 export const normalizeFileName = (name: string) => {
@@ -191,9 +237,13 @@ export const enhanceEditor = ({ file, folder, internalLinkClicked }: EnhanceEdit
       (editor as any).__linkNavigateHandler = handler;
       editor.addEventListener('link-navigate', handler);
 
-      // get all "<img>" elements & process their "src" to point to local file paths:
+      // get all "<img>" elements & process their "src" to point to local file paths.
+      // Images with data-src are owned by paste-image-plugin's node view (which uses
+      // Tauri v2 convertFileSrc); skip them to avoid overwriting with a raw v1-style
+      // "asset://" URL that won't load.
       const imgEls = editor.querySelectorAll('img');
       imgEls.forEach(async (el: HTMLImageElement) => {
+        if (el.hasAttribute('data-src')) return;
         if (isInternalLink(el.src)) {
           const { path } = splitFilePath(file?.file_path ?? ''); // keep path, remove fileName
           const basePath = file ? path : await getPath('', true);
@@ -265,7 +315,7 @@ export const getUserLocale = () => {
 // Tries exact match first, then language-prefix match (e.g. "zh" → "zh-CN").
 export const matchSupportedLocale = (rawLocale: string): string => {
   if (!rawLocale) return DEFAULT_LANG;
-  const supported = Object.keys(i18nLocales).filter(k => k !== 'null');
+  const supported = SUPPORTED_LOCALE_IDS;
   if (supported.includes(rawLocale)) return rawLocale;
   // prefix match: "zh" → "zh-CN", "es" → "es-ES"
   const prefix = rawLocale.split('-')[0].toLowerCase();
@@ -297,18 +347,40 @@ export const isGlobalShortcut = (e: KeyboardEvent | React.KeyboardEvent<HTMLInpu
   return false;
 };
 
+const IMAGE_EXTENSIONS = new Set([
+  '.bmp', '.png', '.apng', '.jpg', '.jpeg', '.gif', '.ico', '.svg', '.webp', '.avif',
+]);
+
+/**
+ * True when `fileName` ends with a known image extension. Uses strict
+ * extension matching (last dot onward) so names like `foo.pngnotes.md`
+ * don't falsely match, unlike a naive `indexOf('.png') > 0`.
+ */
 export const isImageFile = (fileName: string) => {
-  const lcFileName = (fileName ?? '').toLowerCase();
-  return (
-    lcFileName.indexOf('.bmp') > 0 ||
-    lcFileName.indexOf('.png') > 0 ||
-    lcFileName.indexOf('.apng') > 0 ||
-    lcFileName.indexOf('.jpg') > 0 ||
-    lcFileName.indexOf('.jpeg') > 0 ||
-    lcFileName.indexOf('.gif') > 0 ||
-    lcFileName.indexOf('.ico') > 0 ||
-    lcFileName.indexOf('.svg') > 0
-  );
+  const lc = (fileName ?? '').toLowerCase();
+  const dot = lc.lastIndexOf('.');
+  if (dot < 0) return false;
+  return IMAGE_EXTENSIONS.has(lc.slice(dot));
+};
+
+const MEDIA_EXTENSIONS = new Set([
+  // video
+  '.mp4', '.webm', '.mov', '.mkv',
+  // audio
+  '.mp3', '.ogg', '.wav', '.m4a', '.flac',
+]);
+
+/**
+ * True when `fileName` is a binary media/image file that should be rendered
+ * directly from disk (no UTF-8 text read). Tab-loading code uses this to
+ * skip `read_file`, which would throw on binary bytes.
+ */
+export const isBinaryMediaFile = (fileName: string) => {
+  if (isImageFile(fileName)) return true;
+  const lc = (fileName ?? '').toLowerCase();
+  const dot = lc.lastIndexOf('.');
+  if (dot < 0) return false;
+  return MEDIA_EXTENSIONS.has(lc.slice(dot));
 };
 
 // detect if a file is a code file; also used for Prism highlight fn;

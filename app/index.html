@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/src/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Preconnect shaves ~100-200ms off the icon-font fetch by opening the TCP+TLS handshake in parallel with HTML parsing. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined" />
     <title>Binderus</title>
 
@@ -12,7 +15,13 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- Boot splash: zero-JS, removed by React on first mount (no layout shift — replaced in-place). -->
+      <div id="boot-splash" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0f1419;z-index:99999;">
+        <div style="width:36px;height:36px;border:3px solid #334;border-top-color:#7aa2f7;border-radius:50%;animation:boot-spin 0.6s linear infinite;"></div>
+        <style>@keyframes boot-spin{to{transform:rotate(360deg)}}</style>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

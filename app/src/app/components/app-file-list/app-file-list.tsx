@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import { useEffect, useRef, useState } from 'react';
-import { createFolder, deleteDir, newFile, getPath, renameFile, moveFiles, ReadDirResponse } from '../../utils/tauri-utils';
-import { isWeb } from '../../utils/base-utils';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createFolder, deleteDir, duplicateItem, newFile, getPath, renameFile, moveFiles, readDirectoryCached, invalidateDirCache, invalidateReadCache } from '../../utils/tauri-utils';
+import { isWeb, extractParentPath } from '../../utils/base-utils';
 import { mockReadDirectory } from '../../utils/mock-data';
 import { FileType } from '../../types';
 import { useAppContext } from '../../hooks/use-app-context';
@@ -20,8 +20,7 @@ import {
   setFavouriteItem,
   t
 } from '../../utils/base-utils';
-import { AiFillStar } from 'react-icons/ai';
-import { BsStack } from 'react-icons/bs';
+import { BsStarFill, BsStack } from 'react-icons/bs';
 import { debounce } from '../../utils/base-utils';
 
 interface Props {
@@ -52,6 +51,7 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
   } = useAppContext();
 
   const activeTabPath = useAppStore((s) => s.activeTabPath);
+  const renameTab = useAppStore((s) => s.renameTab);
   const sidebarView = useAppStore((s) => s.sidebarView);
 
   const [hoveringId, setHoveringId] = useState('');
@@ -128,7 +128,7 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
     }
 
     const dirPath = folder ? folder?.file_path : await getPath('', true);
-    const res: ReadDirResponse = await invoke('read_directory', { dir: dirPath });
+    const res = await readDirectoryCached(dirPath);
     setFiles((res?.files as FileType[]) ?? []);
     return res?.files ?? [];
   };
@@ -161,6 +161,11 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
         await deleteDir(item.file_path);
       } else {
         await invoke('delete_file', { filePath: item.file_path });
+        // Parent dir listing shrank; drop the file's own read-cache entry
+        // Match trailing separator across both '/' and '\' for Windows compat
+        const sepIdx = Math.max(item.file_path.lastIndexOf('/'), item.file_path.lastIndexOf('\\'));
+        if (sepIdx > 0) invalidateDirCache(item.file_path.slice(0, sepIdx));
+        invalidateReadCache(item.file_path);
       }
     }
     // Remove deleted item from favourites (if present)
@@ -179,8 +184,28 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
       setRenamingItem(null);
       return;
     }
+    const newName = renameValue.trim();
     if (!isWeb) {
-      await renameFile(renamingItem, renameValue.trim());
+      await renameFile(renamingItem, newName);
+    }
+    // Compute new path (parent stays, basename swaps) and sync open tabs.
+    // Folder rename cascades to every tab whose path lives under the old folder.
+    const oldPath = renamingItem.file_path;
+    const sep = oldPath.includes('\\') ? '\\' : '/';
+    const parent = extractParentPath(oldPath);
+    const newPath = parent ? `${parent}${sep}${newName}` : newName;
+    if (renamingItem.is_dir) {
+      const oldPrefix = `${oldPath}${sep}`;
+      const newPrefix = `${newPath}${sep}`;
+      const tabs = useAppStore.getState().tabs;
+      for (const tab of tabs) {
+        if (tab.file_path.startsWith(oldPrefix)) {
+          const tail = tab.file_path.slice(oldPrefix.length);
+          renameTab(tab.file_path, `${newPrefix}${tail}`, tab.file_name);
+        }
+      }
+    } else {
+      renameTab(oldPath, newPath, newName);
     }
     setRenamingItem(null);
     readDir();
@@ -195,19 +220,34 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
     setMoveItems(items);
   };
 
+  const onDuplicate = async (item: FileType) => {
+    const newPath = await duplicateItem(item);
+    if (newPath) {
+      setRefreshFolder ? setRefreshFolder(true) : '';
+      readDir();
+    }
+  };
+
   const handleMoveConfirm = async (destPath: string) => {
     if (moveItems.length === 0) return;
     if (!isWeb) {
       await moveFiles(moveItems.map((i) => i.file_path), destPath);
     }
-    // Update favourites: replace old paths with new paths for moved items
+    const newPathOf = (item: FileType): string => {
+      const sep = item.file_path.includes('\\') ? '\\' : '/';
+      return destPath + sep + item.file_name;
+    };
+    // Update favourites: replace old paths with new paths for moved items.
     setFavourites((list) => list.map((fav) => {
       const moved = moveItems.find((i) => i.file_path === fav.file_path);
       if (!moved) return fav;
-      const sep = fav.file_path.includes('\\') ? '\\' : '/';
-      const newPath = destPath + sep + fav.file_name;
-      return { ...fav, file_path: newPath };
+      return { ...fav, file_path: newPathOf(moved) };
     }));
+    // Keep open tabs' file_path in sync with the move; `renameTab` also
+    // updates `activeTabPath` when the active tab is one of the moved items.
+    for (const item of moveItems) {
+      renameTab(item.file_path, newPathOf(item), item.file_name);
+    }
     setMoveItems([]);
     setSelectedItems([]);
     readDir();
@@ -294,17 +334,23 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
     }
   };
 
-  let folders = [...files]
-    .filter((file) => file.is_dir && !file.file_name.startsWith('.'))
-    .sort((a, b) => a.file_name.localeCompare(b.file_name));
+  // Derived lists — memoized so hover/focus/selection ticks don't re-filter+sort
+  // the whole vault listing on every render. Both depend only on files (+ search
+  // for sortedFiles); no other upstream changes should rebuild them.
+  const folders = useMemo(
+    () => [...files]
+      .filter((file) => file.is_dir && !file.file_name.startsWith('.'))
+      .sort((a, b) => a.file_name.localeCompare(b.file_name)),
+    [files]
+  );
 
-  let sortedFiles = [...files]
-    .filter((file) => !file.is_dir && !file.file_name.startsWith('.'))
-    .sort((a, b) => a.file_name.localeCompare(b.file_name));
-
-  if (search) {
-    sortedFiles = sortedFiles.filter((obj) => obj.file_name.toLowerCase().indexOf(search) >= 0);
-  }
+  const sortedFiles = useMemo(() => {
+    const base = [...files]
+      .filter((file) => !file.is_dir && !file.file_name.startsWith('.'))
+      .sort((a, b) => a.file_name.localeCompare(b.file_name));
+    if (!search) return base;
+    return base.filter((obj) => obj.file_name.toLowerCase().indexOf(search) >= 0);
+  }, [files, search]);
 
   // Tree view: show SidebarTree for ALL tab, fall back to flat list for others
   if (modeTab === ModeTab.ALL && sidebarView === 'tree') {
@@ -477,6 +523,16 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
                                         ? `${t('TEXT_MOVE')} (${selectedItems.length})`
                                         : t('TEXT_MOVE')}
                                     </button>
+                                    <button
+                                      className="menu-item"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        onDuplicate(item);
+                                        close();
+                                      }}
+                                    >
+                                      {t('TEXT_DUPLICATE')}
+                                    </button>
                                     {confirmDeleteId === item.file_path ? (
                                       <button
                                         className="btn btn-danger"
@@ -595,7 +651,7 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
                   <span className="flex-1 truncate">
                     {name}{' '}
                     {isFavourite(item) && (
-                      <AiFillStar className="inline ml-1 text-gray-600 hover:text-blue-500 cursor-pointer" onClick={favClicked} />
+                      <BsStarFill className="inline ml-1 text-gray-600 hover:text-blue-500 cursor-pointer" onClick={favClicked} />
                     )}
                   </span>
                   {modeTab === ModeTab.ALL && hoveringId === item.file_path && (
@@ -636,6 +692,16 @@ export default ({ onFileSelect, onFolderSelect, modeTab }: Props) => {
                                   {isSelected(item) && selectedItems.length > 1
                                     ? `${t('TEXT_MOVE')} (${selectedItems.length})`
                                     : t('TEXT_MOVE')}
+                                </button>
+                                <button
+                                  className="menu-item"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    onDuplicate(item);
+                                    close();
+                                  }}
+                                >
+                                  {t('TEXT_DUPLICATE')}
                                 </button>
                                 {confirmDeleteId === item.file_path ? (
                                   <button

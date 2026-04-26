@@ -4,10 +4,11 @@ import { useMemo, useRef } from 'react';
 import { useState } from 'react';
 import { useAppContext } from '../../hooks/use-app-context';
 import { useAppStore } from '../../hooks/use-app-store';
+import { useShallow } from 'zustand/react/shallow';
 import { FileType } from '../../types';
 import { addItemtoRecentList, focusEditor, getRelativePath, isGlobalShortcut, t } from '../../utils/base-utils';
 import { getPath } from '../../utils/tauri-utils';
-import { AiFillStar } from 'react-icons/ai';
+import { BsStarFill } from 'react-icons/bs';
 
 export default () => {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -15,11 +16,14 @@ export default () => {
   const [rawMatches, setRawMatches] = useState<FileType[]>([]);
   const { setRecentList } = useAppContext();
   const openTab = useAppStore((s) => s.openTab);
-  const favourites = useAppStore((s) => s.favourites);
+  // useShallow: favourites array stays stable across unrelated store updates
+  const favourites = useAppStore(useShallow((s) => s.favourites));
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [basePath, setBasePath] = useState('');
 
-  // Sort matches: favourites first, then the rest
+  // Sort matches: favourites first, then the rest. Capped at MAX_RESULTS so
+  // 1000+ file vaults don't blow up layout on a 2-char search query.
+  const MAX_RESULTS = 200;
   const matches = useMemo(() => {
     const favPaths = new Set(favourites.map((f) => f.file_path));
     const favFiles: FileType[] = [];
@@ -27,7 +31,8 @@ export default () => {
     for (const f of rawMatches) {
       (favPaths.has(f.file_path) ? favFiles : otherFiles).push(f);
     }
-    return [...favFiles, ...otherFiles];
+    const merged = [...favFiles, ...otherFiles];
+    return merged.length > MAX_RESULTS ? merged.slice(0, MAX_RESULTS) : merged;
   }, [rawMatches, favourites]);
 
   const searchChanged = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,7 +103,7 @@ export default () => {
               onClick={() => matchSelected(item, idx)}
             >
               <div className="text-sm text-gray-400 flex items-center gap-1.5">
-                {favourites.some((f) => f.file_path === item.file_path) && <AiFillStar size={12} className="text-yellow-400 flex-shrink-0" />}
+                {favourites.some((f) => f.file_path === item.file_path) && <BsStarFill size={12} className="text-yellow-400 flex-shrink-0" />}
                 {item.file_name}
               </div>
               <div className="text-xs text-gray-600 truncate">{getRelativePath(item.file_path, basePath)}</div>

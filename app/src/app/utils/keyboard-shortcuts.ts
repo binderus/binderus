@@ -29,7 +29,8 @@ export const SHORTCUTS: ShortcutDef[] = [
   { id: 'toggle-sidebar',  labelKey: 'SHORTCUT_TOGGLE_SIDEBAR',  mac: '⌘ \\',       win: 'Ctrl \\' },
   { id: 'search',          labelKey: 'SHORTCUT_SEARCH_FILES',    mac: '⌘ /',        win: 'Ctrl /' },
   { id: 'raw-panel',       labelKey: 'SHORTCUT_RAW_PANEL',       mac: '⌘ ;',        win: 'Ctrl ;' },
-  { id: 'lock',            labelKey: 'SHORTCUT_LOCK_APP',        mac: '⌘ L',        win: 'Ctrl L' },
+  { id: 'toggle-editor-mode', labelKey: 'SHORTCUT_TOGGLE_EDITOR_MODE', mac: '⌘ .',   win: 'Ctrl .' },
+  { id: 'lock',            labelKey: 'SHORTCUT_LOCK_APP',        mac: '⌘ ⇧ L',      win: 'Ctrl Shift L' },
   { id: 'close-tab',       labelKey: 'SHORTCUT_CLOSE_TAB',       mac: '⌘ W',        win: 'Ctrl W' },
   { id: 'next-tab',        labelKey: 'SHORTCUT_NEXT_TAB',        mac: '⌘ ⇧ ]',      win: 'Ctrl Shift ]' },
   { id: 'prev-tab',        labelKey: 'SHORTCUT_PREV_TAB',        mac: '⌘ ⇧ [',      win: 'Ctrl Shift [' },
@@ -52,6 +53,7 @@ export interface ShortcutActions {
   openSearch: () => void;
   openSettings: () => void;
   toggleRawPanel: () => void;
+  toggleEditorMode: () => void;
   toggleQuickSwitcher: () => void;
   lockApp: () => void;
   closeActiveTab: () => void;
@@ -68,7 +70,47 @@ export interface ShortcutActions {
 /**
  * Register a single document-level keydown listener for all app shortcuts.
  * Returns a cleanup function to remove the listener.
+ *
+ * Implementation note: combos are resolved via a Map<string, handler> so each
+ * keydown is a single hash lookup instead of a 14-`if` linear scan. Keys are
+ * normalized: "shift+<lowercased key>" or "<lowercased key>". Aliases for
+ * shifted punctuation (',' / '<', '.' / '>') are registered once each so the
+ * Map covers both physical layouts without additional branching at dispatch.
  */
+type ShortcutHandler = (actions: ShortcutActions) => boolean | void;
+
+const buildShortcutMap = (): Map<string, ShortcutHandler> => {
+  const m = new Map<string, ShortcutHandler>();
+  m.set('p',       (a) => { a.toggleQuickSwitcher(); });
+  m.set(',',       (a) => { a.openSettings(); });
+  m.set('shift+,', (a) => { a.openSettings(); });
+  m.set('\\',      (a) => { a.toggleSidebar(); });
+  m.set('/',       (a) => { a.openSearch(); });
+  m.set(';',       (a) => { a.toggleRawPanel(); });
+  m.set('.',       (a) => { a.toggleEditorMode(); });
+  m.set('w',       (a) => { a.closeActiveTab(); });
+  m.set('arrowup', (a) => { a.folderUp(); });
+  // Shift-modified combos. `encryptionEnabled` guard returns false so the
+  // caller skips preventDefault when the lock shortcut is a no-op.
+  m.set('shift+l', (a) => { if (!a.encryptionEnabled) return false; a.lockApp(); });
+  m.set('shift+]', (a) => { a.nextTab(); });
+  m.set('shift+[', (a) => { a.prevTab(); });
+  m.set('shift+<', (a) => { a.prevModeTab(); });
+  m.set('shift+>', (a) => { a.nextModeTab(); });
+  // Shift+',' / shift+'.' behave like < / > on US layouts without the need
+  // to actually type the angle-bracket — mirrors the legacy branch.
+  m.set('shift+.', (a) => { a.nextModeTab(); });
+  // Note: 'shift+,' is already mapped to openSettings above (Cmd+,).
+  // The original code let Cmd+Shift+, fall through to prev-mode-tab; preserve
+  // that priority by only using prev-mode-tab when shift+',' wasn't consumed
+  // — done via a dedicated check in the dispatcher for shift+',' because the
+  // Map can only hold one handler per key.
+  // Cmd+1..9 — handled inline in dispatcher (range match), not Map.
+  return m;
+};
+
+const SHORTCUT_MAP = buildShortcutMap();
+
 export const registerShortcuts = (actions: ShortcutActions): (() => void) => {
   const handler = (e: KeyboardEvent) => {
     if (!isCmdKey(e)) return;
@@ -76,84 +118,28 @@ export const registerShortcuts = (actions: ShortcutActions): (() => void) => {
     const key = e.key.toLowerCase();
     const shift = e.shiftKey;
 
-    // Cmd+P — Quick Switcher
-    if (key === 'p' && !shift) {
-      e.preventDefault();
-      actions.toggleQuickSwitcher();
-      return;
-    }
-    // Cmd+, — Settings
-    if (e.key === ',') {
-      e.preventDefault();
-      actions.openSettings();
-      return;
-    }
-    // Cmd+\ — Toggle sidebar
-    if (e.key === '\\' && !shift) {
-      e.preventDefault();
-      actions.toggleSidebar();
-      return;
-    }
-    // Cmd+/ — Search
-    if (e.key === '/' && !shift) {
-      e.preventDefault();
-      actions.openSearch();
-      return;
-    }
-    // Cmd+; — Raw markdown panel
-    if (e.key === ';' && !shift) {
-      e.preventDefault();
-      actions.toggleRawPanel();
-      return;
-    }
-    // Cmd+L — Lock app (only when encryption enabled)
-    if (key === 'l' && !shift && actions.encryptionEnabled) {
-      e.preventDefault();
-      actions.lockApp();
-      return;
-    }
-    // Cmd+W — Close active tab
-    if (key === 'w' && !shift) {
-      e.preventDefault();
-      actions.closeActiveTab();
-      return;
-    }
-    // Cmd+Shift+] — Next tab
-    if (e.key === ']' && shift) {
-      e.preventDefault();
-      actions.nextTab();
-      return;
-    }
-    // Cmd+Shift+[ — Previous tab
-    if (e.key === '[' && shift) {
-      e.preventDefault();
-      actions.prevTab();
-      return;
-    }
-    // Cmd+Shift+< (Cmd+Shift+,) — Previous mode tab
-    if (e.key === '<' || (e.key === ',' && shift)) {
-      e.preventDefault();
-      actions.prevModeTab();
-      return;
-    }
-    // Cmd+Shift+> (Cmd+Shift+.) — Next mode tab
-    if (e.key === '>' || (e.key === '.' && shift)) {
-      e.preventDefault();
-      actions.nextModeTab();
-      return;
-    }
-    // Cmd+Up — Go up one directory level in sidebar
-    if (e.key === 'ArrowUp' && !shift) {
-      e.preventDefault();
-      actions.folderUp();
-      return;
-    }
-    // Cmd+1..9 — Jump to tab N
+    // Cmd+1..9 — handled first (range match, simpler than Map entries)
     if (!shift && key >= '1' && key <= '9') {
       e.preventDefault();
       actions.jumpToTab(parseInt(key, 10));
       return;
     }
+
+    // Legacy behavior: Cmd+Shift+',' falls through to prev-mode-tab (not
+    // settings), so we special-case it before the Map lookup.
+    if (shift && key === ',') {
+      e.preventDefault();
+      actions.prevModeTab();
+      return;
+    }
+
+    const combo = shift ? `shift+${key}` : key;
+    const h = SHORTCUT_MAP.get(combo);
+    if (!h) return;
+    const result = h(actions);
+    // Handler returned explicit `false` → skip preventDefault (e.g. lock
+    // shortcut when encryption is disabled).
+    if (result !== false) e.preventDefault();
   };
 
   document.addEventListener('keydown', handler);
