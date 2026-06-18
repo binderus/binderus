@@ -1,0 +1,55 @@
+# Patch 1/10: Hero CTA Buttons Above the Fold
+# File: /Users/dylan/work/bindeck-website/src/views/examples/Landing.js
+# Context: The hero section's btn-wrapper has Download + Star buttons
+# commented out (lines 110-134). Uncomment and convert to Binderus CTAs.
+#
+# Apply: open Landing.js, find the commented btn-wrapper block (lines 110-134),
+# replace with the below. You'll also need to add the import for Button if
+# it's not already imported in Landing.js.
+#
+# Note: Landing.js already imports Button from reactstrap (line 26). The
+# constants (WIN_FILE_URL, etc.) are already imported (line 45). So this
+# patch is self-contained.
+
+# --- begin replacement for the commented btn-wrapper block ---
+
+<div className="btn-wrapper mt-5">
+  <Button
+    className="btn-white btn-icon mb-3 mb-sm-0"
+    color="default"
+    href="/download"
+    size="lg"
+    onClick={() => {
+      window.gtag('set', 'page_path', 'hero-download-button');
+      window.gtag('event', 'page_view');
+    }}
+  >
+    <span className="btn-inner--icon mr-1">
+      <i className="ni ni-cloud-download-95" />
+    </span>
+    <span className="btn-inner--text">Download Free (9MB)</span>
+  </Button>{' '}
+  <Button
+    className="btn-icon mb-3 mb-sm-0"
+    color="github"
+    href="https://github.com/binderus/binderus"
+    size="lg"
+    target="_blank"
+    onClick={() => {
+      window.gtag('event', 'click', {
+        event_category: 'clicked-link',
+        event_label: 'hero-star-github'
+      });
+    }}
+  >
+    <span className="btn-inner--icon mr-1">
+      <i className="fa fa-github" />
+    </span>
+    <span className="btn-inner--text">
+      <span className="text-warning mr-1">Star us</span>
+      on GitHub
+    </span>
+  </Button>
+</div>
+
+# --- end replacement ---

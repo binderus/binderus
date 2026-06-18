@@ -1,0 +1,41 @@
+# Patch 4/10: GitHub Star Badge in Navbar
+# File: /Users/dylan/work/bindeck-website/src/components/Navbars/DemoNavbar.js
+#
+# Context: The navbar has a Github icon link (line 283-298) but no
+# visible star count or badge. Adds a shields.io badge next to the
+# Github icon to show the live star count.
+#
+# Apply: Open DemoNavbar.js, find the existing Github NavItem (lines 283-298),
+# and replace it with the code below.
+#
+# Note: Uses the static.svg shields.io badge (no JS) so it loads reliably.
+# If you prefer the "social" style with dynamic count, use:
+#   https://img.shields.io/github/stars/binderus/binderus?style=social
+
+# --- begin replacement for Github NavItem (lines 283-298) ---
+
+<NavItem>
+  <NavLink
+    className="nav-link-icon"
+    href={GITHUB_URL}
+    id="tooltip112445449"
+    target="_blank"
+  >
+    <i className="fa fa-github" />
+    <span className="d-inline-block ml-2" style={{ verticalAlign: 'middle' }}>
+      <img
+        src="https://img.shields.io/github/stars/binderus/binderus?style=flat&label=Stars&color=blue"
+        alt="GitHub stars"
+        style={{ height: '20px' }}
+      />
+    </span>
+    <span className="nav-link-inner--text d-lg-none ml-2">
+      Github
+    </span>
+  </NavLink>
+  <UncontrolledTooltip delay={0} target="tooltip112445449">
+    Star us on Github
+  </UncontrolledTooltip>
+</NavItem>
+
+# --- end replacement ---

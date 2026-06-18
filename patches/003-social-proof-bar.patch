@@ -1,0 +1,41 @@
+# Patch 3/10: Social Proof / Install Count Bar on Homepage
+# File: /Users/dylan/work/bindeck-website/src/views/examples/Landing.js
+#
+# Context: The homepage has no social proof — no star count, no download
+# count, no "trust signals" anywhere. Add a subtle social proof bar below
+# the feature section (after the values grid at line ~421) and before the
+# background section.
+#
+# The hero section separator (line 556-568) comes after the values section.
+# Insert the social proof bar just before that separator.
+#
+# Apply: Open Landing.js, find the separator SVG block (lines 556-568 —
+# the one inside section bg-gradient-default). Add the social proof bar
+# BEFORE the separator div starts.
+
+# --- begin insertion: add before line 556 ---
+
+<section className="section pb-0 bg-gradient-default">
+  <Container className="pt-lg-3">
+    <Row className="justify-content-center text-center">
+      <Col lg="10">
+        <div className="d-flex flex-wrap justify-content-center align-items-center gap-4 py-3">
+          <span className="text-white mr-4 mb-2">
+            <i className="fa fa-star text-warning mr-1" /> 42 GitHub Stars
+          </span>
+          <span className="text-white mr-4 mb-2">
+            <i className="fa fa-download text-success mr-1" /> 3 Platforms
+          </span>
+          <span className="text-white mr-4 mb-2">
+            <i className="fa fa-archive text-info mr-1" /> 9MB
+          </span>
+          <span className="text-white mb-2">
+            <i className="fa fa-code text-primary mr-1" /> 100% Open Source (MIT)
+          </span>
+        </div>
+      </Col>
+    </Row>
+  </Container>
+</section>
+
+# --- end insertion ---
