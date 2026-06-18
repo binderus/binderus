@@ -1,0 +1,93 @@
+# Patch 5/10: OS Auto-Detect on /download Page
+# File: /Users/dylan/work/bindeck-website/app/index.html (download route)
+#
+# Context: The /download page shows 3 OS tiles (macOS / Windows / Linux)
+# with no indication of which one matches the visitor's device. The user
+# must know their OS and scroll to the right section — adding friction
+# at the exact moment of conversion.
+#
+# Impact: MEDIUM — reduces choice friction on the download page. Helps
+# users on their first visit feel the page is built for them, especially
+# useful for macOS where Apple Silicon vs Intel architecture is confusing.
+#
+# Apply: Open app/index.html (or the download route template), find the
+# closing </body> tag, and insert the <script> block just before it.
+# Also add the CSS rules to the app's stylesheet (or <head> <style>).
+#
+# --- begin insertion: add before </body> ---
+
+  <!-- OS auto-detect: highlights the user's platform tile on /download -->
+  <script>
+    (function() {
+      var os = navigator.platform.toLowerCase();
+      var selector = null;
+      if (os.includes('mac'))       selector = '#macos';
+      else if (os.includes('win'))  selector = '#windows';
+      else if (os.includes('linux')) selector = '#linux';
+
+      if (selector) {
+        var tile = document.querySelector(selector);
+        if (tile) {
+          tile.classList.add('recommended');
+          tile.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+          // Add a subtle badge: "Recommended for your device"
+          var badge = document.createElement('span');
+          badge.textContent = 'Recommended for your device';
+          badge.className = 'os-recommended-badge';
+          tile.prepend(badge);
+
+          // Auto-select architecture for macOS (Apple Silicon vs Intel)
+          if (os.includes('mac')) {
+            var isArm = navigator.userAgent.includes('Apple') ||
+                        navigator.userAgent.includes('arm64');
+            var dmgLink = isArm
+              ? tile.querySelector('a[href$="arm64.dmg"]')
+              : tile.querySelector('a[href$="x64.dmg"]');
+            if (dmgLink) dmgLink.classList.add('default-download');
+          }
+        }
+      }
+    })();
+  </script>
+
+# --- end JS insertion ---
+#
+# ALSO ADD this CSS to the app's stylesheet (src/assets/css/ or <head>):
+#
+# /* OS auto-detect styles — add to app stylesheet */
+# .os-recommended-badge {
+#   display: inline-block;
+#   background: var(--accent, #6366f1);
+#   color: #fff;
+#   font-size: 0.75rem;
+#   padding: 0.25rem 0.75rem;
+#   border-radius: 12px;
+#   margin-bottom: 0.5rem;
+#   font-weight: 600;
+# }
+# .recommended {
+#   border: 2px solid var(--accent, #6366f1);
+#   border-radius: 12px;
+# }
+# .default-download {
+#   font-weight: 700;
+#   position: relative;
+# }
+# .default-download::after {
+#   content: ' (recommended)';
+#   font-size: 0.8em;
+#   color: var(--accent, #6366f1);
+# }
+#
+# Verification:
+# 1. Visit /download on each OS — the matching tile should have a blue
+#    border + badge. Non-matching tiles should be unchanged.
+# 2. On macOS, the correct architecture DMG link (arm64 vs x64) should
+#    show "(recommended)" appended.
+# 3. Test with browser DevTools device emulation toggling platform user
+#    agent strings.
+#
+# Note: This script runs on every page that includes index.html. It is
+# idempotent (no-op if no matching selector exists on non-download pages)
+# so it's safe to include in the global template. No external deps needed.

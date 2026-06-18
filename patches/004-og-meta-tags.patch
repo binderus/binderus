@@ -1,0 +1,74 @@
+# Patch 4/10: OG Meta Tags + Twitter Cards + Schema JSON-LD
+# File: /Users/dylan/work/bindeck-website/app/index.html
+#
+# Context: The site has ZERO Open Graph / Twitter Card meta tags in the
+# <head>. Every share on X, LinkedIn, Discord, Slack, Telegram renders
+# as a bare URL with no preview — massive missed conversion opportunity.
+#
+# Impact: HIGH — touches EVERY page that uses index.html as template
+# (homepage, download, docs, blog). Every social share, chat link,
+# search-engine snippet benefits from structured metadata.
+#
+# Apply: Open app/index.html, find the closing </head> tag (line 15),
+# and insert the block BEFORE it (just after the <title> line).
+#
+# --- begin insertion: add after <title>Binderus</title> (line 11) ---
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://binderus.com/" />
+    <meta property="og:title" content="Binderus — Local-First Markdown Notes for Desktop" />
+    <meta property="og:description" content="A beautiful, local-first markdown note-taking app for macOS, Windows, and Linux. Your notes stay on your machine — fast, private, offline-capable, 100% open source." />
+    <meta property="og:image" content="https://binderus.com/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:site_name" content="Binderus" />
+
+    <!-- Twitter Cards -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Binderus — Local-First Markdown Notes for Desktop" />
+    <meta name="twitter:description" content="A beautiful, local-first markdown note-taking app for macOS, Windows, and Linux. Your notes stay on your machine — fast, private, offline-capable, 100% open source." />
+    <meta name="twitter:image" content="https://binderus.com/og-image.png" />
+
+    <!-- Schema.org JSON-LD for SoftwareApplication -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Binderus",
+      "applicationCategory": "Multimedia",
+      "operatingSystem": ["macOS", "Windows", "Linux"],
+      "description": "A beautiful, local-first markdown note-taking app. Your notes stay on your machine — fast, private, offline-capable.",
+      "url": "https://binderus.com",
+      "downloadUrl": "https://binderus.com/download",
+      "softwareVersion": "1.0.2",
+      "license": "https://github.com/binderus/binderus/blob/main/LICENSE",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "Binderus",
+        "url": "https://github.com/binderus"
+      }
+    }
+    </script>
+
+    <!-- Additional SEO: description + keywords meta tags -->
+    <meta name="description" content="Binderus is a beautiful, local-first markdown note-taking app for macOS, Windows, and Linux. Fast, private, offline-capable, and 100% open source." />
+    <meta name="keywords" content="markdown notes, note-taking app, local-first, privacy, open source, macos notes, windows notes, linux notes, markdown editor, desktop notes" />
+
+# --- end insertion ---
+#
+# Verification:
+# 1. After deploying, visit https://www.opengraph.xyz/ and paste the site URL
+# 2. Use Twitter Card Validator: https://cards-dev.twitter.com/validator
+# 3. Use Google Rich Results Test: https://search.google.com/test/rich-results
+# 4. Share the URL on Slack/Discord/Telegram — preview should show title + description + image
+#
+# Note: You need an actual og-image.png at the site root (1200x630px).
+# If it doesn't exist yet, generate one via the design skill or placeholder
+# until a proper social image is designed.
